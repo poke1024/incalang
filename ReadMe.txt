@@ -1,1 +1,1 @@
-welcome to incalang. all relevant files can be found in the incalang_cvs module.
+welcome to incalang. this is the main module.
