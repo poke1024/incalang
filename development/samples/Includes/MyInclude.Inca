@@ -1,0 +1,7 @@
+// some include file
+
+void f()
+{
+print<<"Hello World"<<endl;
+}
+

@@ -1,0 +1,23 @@
+// shows how to use class templates in Inca
+
+template T class A{
+public:
+T get()
+{
+T c;
+c=a+1;
+return c;
+}
+
+T a;
+}
+
+void main()
+{
+A<int> c;
+A<double> d;
+
+c.a=5;
+print<<c.get();
+}
+

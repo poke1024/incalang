@@ -1,0 +1,4 @@
+void main()
+{
+print<<diskFree("C:/")/(1024*1024)<<" MB free on C:";
+}

@@ -1,0 +1,7 @@
+// sample code to show how to use the grep() command
+
+void main()
+{
+String s="xxabababfewdefwqefwec";
+print<<grep(s,"[ABC]",0);
+}

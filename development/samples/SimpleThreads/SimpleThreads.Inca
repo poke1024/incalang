@@ -1,0 +1,43 @@
+// a short demonstration of the thread library in Inca
+
+Mutex myMutex;
+
+class ThreadOne extends Thread{
+public:
+void run()
+{
+for(int i=0;i<10;i++)
+{
+print<<i<<endl;
+print.flush();
+}
+}
+}
+
+class ThreadTwo extends Thread{
+public:
+void run()
+{
+for(int i=0;i<10;i++)
+{
+print<<chr('a'+(i%26))<<endl;
+print.flush();
+}
+}
+}
+
+void main()
+{
+myMutex.lock();
+
+ThreadOne *t1=new ThreadOne;
+t1->wake();
+
+ThreadTwo *t2=new ThreadTwo;
+t2->wake();
+
+sleepMillis(1000);
+
+while(inkey()=="");
+}
+

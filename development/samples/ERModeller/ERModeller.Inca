@@ -1,0 +1,2133 @@
+// ERModeller (C) 2002 B. Liebl
+
+bool gExportMode;
+bool gExportColor=false;
+
+module Diagram{
+struct DDLNode{
+/*c */
+bool visited;
+Element*element;
+MemoryBuffer buffer;
+PointerArray pre;
+}
+
+class DDLExporter{
+/*c */
+public:
+String getUniqueTableName(String name)
+{
+String sname;
+int i=1;
+
+while(true)
+{
+sname=name;
+if(i>1)
+sname+=str(i);
+if(mNames.bsearch(sname)<0)
+{
+mNames.insert(mNames.binsidx(sname),sname);
+return sname;
+}
+i++;
+}
+}
+
+void addPre(Element*element,Element*pre)
+{
+DDLNode*node=findNode(element);
+DDLNode*preNode=findNode(pre);
+node->pre.append(preNode);
+}
+
+void add(Element*element)
+{
+DDLNode*node=findNode(element);
+element->saveDDL(node->buffer,this);
+}
+
+void save(OutputStream*stream)
+{
+int count=mNodes.count();
+for(int i=0;i<count;i++)
+{
+DDLNode*node=(DDLNode*)mNodes[i];
+saveNode(node,stream);
+}
+}
+
+void saveNode(DDLNode*node,OutputStream*stream)
+{
+if(node->visited)
+return;
+node->visited=true;
+
+int count=node->pre.count();
+for(int i=0;i<count;i++)
+saveNode(((DDLNode*)node->pre[i]),stream);
+
+node->buffer.seekAbsolute(0);
+int length=node->buffer.size();
+for(int i=0;i<length;i++)
+stream->writeByte(node->buffer.readByte());
+}
+
+private:
+DDLNode*findNode(Element*element)
+{
+int count=mNodes.count();
+for(int i=0;i<count;i++)
+{
+DDLNode*node=((DDLNode*)mNodes[i]);
+if(node->element==element)
+return node;
+}
+
+DDLNode*node=new DDLNode;
+node->visited=false;
+node->element=element;
+mNodes.append(node);
+return node;
+}
+
+PointerArray mNodes;
+StringArray mNames;
+}
+
+struct Rect{
+/*c */
+double left;
+double top;
+double right;
+double bottom;
+}
+
+class Draggable{
+/*c */
+public:
+abstract double x();
+abstract double y();
+abstract void moveTo(double x,double y);
+}
+
+enum {
+/*c */
+SID_ENTITY,
+SID_RELATION,
+SID_ATTRIBUTE,
+SID_REGULAR_LINK,
+SID_RELATION_LINK,
+SID_ISA
+}
+
+class Element{
+/*c */
+public:
+void kill(Diagram*diagram)
+{
+diagram->removeElement(this);
+delete this;
+}
+
+void findBounds(Rect*bounds)
+{
+}
+
+abstract void draw();
+abstract InPlaceEdit*click(double x,double y);
+abstract bool inside(double x,double y);
+Draggable*draggable(){return null;}
+abstract void saveID(OutputStream*stream);
+abstract void saveData(Diagram*diagram,OutputStream*stream);
+abstract void loadData(Diagram*diagram,InputStream*stream);
+void saveDDL(OutputStream&stream,DDLExporter*exporter){}
+}
+
+class BoxElement extends Draggable,Element,InPlaceClient{
+/*c */
+public:
+void create()
+{
+mName="untitled";
+mX=0;
+mY=0;
+mLinks=null;
+}
+
+void kill(Diagram*diagram)
+{
+while(mLinks)
+mLinks->link->kill(diagram);
+Element::kill(diagram);
+}
+
+void moveTo(double x,double y)
+{
+mX=x;
+mY=y;
+changed();
+}
+
+double x()
+{
+return mX;
+}
+
+double y()
+{
+return mY;
+}
+
+bool inside(double x,double y)
+{
+return x>=mRect.left&&x<=mRect.right&&
+y>=mRect.top&&y<=mRect.bottom;
+}
+
+void findBounds(Rect*bounds)
+{
+bounds->left=min(bounds->left,mRect.left);
+bounds->top=min(bounds->top,mRect.top);
+bounds->right=max(bounds->right,mRect.right);
+bounds->bottom=max(bounds->bottom,mRect.bottom);
+}
+
+void setName(String name)
+{
+mName=name;
+changed();
+}
+
+String name()
+{
+return mName;
+}
+
+InPlaceEdit*click(double x,double y)
+{
+const int k=12;
+if(x>=mRect.left+k&&x<=mRect.right-k&&
+y>=mRect.top+k&&y<=mRect.bottom-k)
+{
+InPlaceEdit*ipe=new InPlaceEdit;
+ipe->init(this,1,mName,mX,mY);
+return ipe;
+}
+return null;
+}
+
+void setAttribute(int name, const String&text)
+{
+if(name==1)
+setName(text);
+}
+
+Draggable*draggable()
+{
+return this;
+}
+
+double width()
+{
+return mRect.right-mRect.left;
+}
+
+double height()
+{
+return mRect.bottom-mRect.top;
+}
+
+void addLink(Link*link)
+{
+LinkList*node=new LinkList;
+node->link=link;
+node->next=mLinks;
+mLinks=node;
+}
+
+void removeLink(Link*item)
+{
+LinkList**link=&mLinks;
+LinkList*node=*link;
+while(node)
+{
+if(node->link==item)
+{
+*link=node->next;
+delete node;
+break;
+}
+link=&node->next;
+node=*link;
+}
+}
+
+void saveData(Diagram*diagram,OutputStream*stream)
+{
+stream->writeString(mName);
+stream->writeDouble(mX);
+stream->writeDouble(mY);
+}
+
+void loadData(Diagram*diagram,InputStream*stream)
+{
+mName=stream->readString();
+mX=stream->readDouble();
+mY=stream->readDouble();
+changed();
+}
+
+bool hasLinkTo(BoxElement*element)
+{
+LinkList*node=mLinks;
+while(node)
+{
+if(node->link->opposite(this)==element)
+return true;
+node=node->next;
+}
+return false;
+}
+
+protected:
+abstract void changed();
+
+void updateLinks()
+{
+LinkList*node=mLinks;
+while(node)
+{
+node->link->changed();
+node=node->next;
+}
+}
+
+String mName;
+double mX,mY;
+Rect mRect;
+double mRadius;
+double mHalfTextWidth;
+LinkList*mLinks;
+}
+
+class Entity extends BoxElement{
+/*c */
+public:
+void draw()
+{
+if(gExportColor||not gExportMode)
+sglSetColor("yellow");
+else
+sglSetColor("white");
+sglFillRect(mRect.left,mRect.top,mRect.right,mRect.bottom);
+sglSetColor("black");
+sglFrameRect(mRect.left,mRect.top,mRect.right,mRect.bottom);
+
+if(inPlaceEditName()!=1)
+{
+sglMoveTo(mX-mHalfTextWidth,mY);
+sglDrawText(mName);
+}
+}
+
+void saveID(OutputStream*stream)
+{
+stream->writeQuad(SID_ENTITY);
+}
+
+void saveDDL(OutputStream&stream,DDLExporter*exporter)
+{
+String name=exporter->getUniqueTableName(mName);
+stream<<"create table "<<name<<"(\r\n";
+bool first=true;
+saveDDLAttributes(stream,first,false,exporter);
+stream<<");\r\n\r\n";
+}
+
+void saveDDLAttributes(OutputStream&stream,bool &first,
+bool inherited,DDLExporter*exporter)
+{
+LinkList*node=mLinks;
+bool inheritedFirst=true;
+while(node)
+{
+BoxElement*element=node->link->opposite(this);
+Attribute*attribute=(Attribute*)element;
+if(attribute)
+{
+if(not inherited||attribute->isPrimaryKey())
+{
+if(first==false)
+stream<<",\r\n";
+if(inherited&&inheritedFirst)
+{
+stream<<"\t-- is_a "<<name()<<"\r\n";
+inheritedFirst=false;
+}
+stream<<"\t";
+attribute->saveTableDDL(stream);
+first=false;
+}
+}
+Relation*relation=(Relation*)element;
+if(not inherited&&relation&&not node->link->directed())
+relation->saveEmbedded(stream,first,this,exporter);
+node=node->next;
+}
+
+int index=0;
+while(true)
+{
+Entity*entity=base(index);
+if(entity==null)
+break;
+entity->saveDDLAttributes(stream,first,true,exporter);
+index++;
+}
+}
+
+void saveForeignKeyDDL(OutputStream&stream,String prefix)
+{
+LinkList*node;
+Attribute*attribute=null;
+Entity*entity=this;
+while(true)
+{
+node=entity->mLinks;
+while(node)
+{
+BoxElement*element=node->link->opposite(entity);
+attribute=(Attribute*)element;
+if(attribute&&attribute->isPrimaryKey())
+break;
+else
+attribute=null;
+node=node->next;
+}
+if(attribute)
+break;
+entity=entity->base(0);
+if(entity==null)
+fatal("no primary key found for table "+mName);
+}
+
+String pkname=attribute->name();
+stream<<prefix<<mName<<"_"<<pkname;
+stream<<" integer foreign key references "<<mName;
+}
+
+Entity*base(int index)
+{
+LinkList*node=mLinks;
+int count=0;
+while(node)
+{
+Link*link=node->link;
+if(not link->directed())
+{
+Isa*element=(Isa*)link->opposite(this);
+if(element)
+{
+if(index==count)
+return element->base();
+count++;
+}
+}
+node=node->next;
+}
+return null;
+}
+
+protected:
+void changed()
+{
+const int k=14;
+int ascent=sglGetFontAscent();
+int descent=sglGetFontDescent();
+float tw=sglTextWidth(mName)*0.5;
+
+mRect.left=mX-tw-k;
+mRect.right=mX+tw+k;
+mRect.top=mY-ascent-k;
+mRect.bottom=mY+descent+k;
+mHalfTextWidth=tw;
+
+updateLinks();
+}
+}
+
+class Relation extends BoxElement{
+/*c */
+public:
+void draw()
+{
+double cx=0.5*(mRect.left+mRect.right);
+double cy=0.5*(mRect.top+mRect.bottom);
+if(gExportColor||not gExportMode)
+sglSetColor("magenta");
+else
+sglSetColor("white");
+glBegin(GL_QUADS);
+glVertex2f(cx,mRect.top);
+glVertex2f(mRect.right,cy);
+glVertex2f(cx,mRect.bottom);
+glVertex2f(mRect.left,cy);
+glEnd();
+sglSetColor("black");
+glBegin(GL_LINE_STRIP);
+glVertex2f(cx,mRect.top);
+glVertex2f(mRect.right,cy);
+glVertex2f(cx,mRect.bottom);
+glVertex2f(mRect.left,cy);
+glVertex2f(cx,mRect.top);
+glEnd();
+
+if(inPlaceEditName()!=1)
+{
+sglMoveTo(mX-mHalfTextWidth,mY);
+sglDrawText(mName);
+}
+}
+
+void saveID(OutputStream*stream)
+{
+stream->writeQuad(SID_RELATION);
+}
+
+void saveDDL(OutputStream&stream,DDLExporter*exporter)
+{
+if(trivial())
+return;
+String name=exporter->getUniqueTableName(mName);
+stream<<"create table "<<name<<"(\r\n";
+LinkList*node=mLinks;
+bool first=true;
+while(node)
+{
+BoxElement*element=node->link->opposite(this);
+Entity*entity=(Entity*)element;
+if(entity)
+{
+if(first==false)
+stream<<",\r\n";
+stream<<"\t";
+exporter->addPre(this,entity);
+entity->saveForeignKeyDDL(stream,"");
+first=false;
+}
+node=node->next;
+}
+stream<<");\r\n\r\n";
+}
+
+void saveEmbedded(OutputStream&stream,bool &first,
+Element*current,DDLExporter*exporter)
+{
+if(not trivial())
+return;
+LinkList*node=mLinks;
+while(node)
+{
+RelationLink*link=(RelationLink*)node->link;
+if(link&&link->directed()&&link->max()=="1")
+{
+if(first==false)
+stream<<",\r\n";
+Entity*entity=(Entity*)link->opposite(this);
+stream<<"\t";
+String prefix=mName+"_";
+entity->saveForeignKeyDDL(stream,prefix);
+if(link->min()=="1")
+stream<<" not null";
+first=false;
+exporter->addPre(current,entity);
+}
+node=node->next;
+}
+}
+
+bool trivial()
+{
+LinkList*node=mLinks;
+while(node)
+{
+RelationLink*link=(RelationLink*)node->link;
+if(link&&link->directed()&&link->max()!="1")
+return false;
+node=node->next;
+}
+return true;
+}
+
+protected:
+void changed()
+{
+const int k=14;
+const float twh=1.5;
+const float twv=0.1;
+int ascent=sglGetFontAscent();
+int descent=sglGetFontDescent();
+float tw=sglTextWidth(mName)*0.5;
+
+mRect.left=mX-tw*twh-k;
+mRect.right=mX+tw*twh+k;
+mRect.top=mY-ascent-k-tw*twv;
+mRect.bottom=mY+descent+k+tw*twv;
+mHalfTextWidth=tw;
+
+updateLinks();
+}
+}
+
+enum {
+/*c */
+ATTRIBUTE_FLAG_PK=1
+}
+
+class Attribute extends BoxElement{
+/*c */
+public:
+void create()
+{
+mType="INTEGER";
+mFlags=0;
+}
+
+void draw()
+{
+if(gExportColor||not gExportMode)
+sglSetColor("green");
+else
+sglSetColor("white");
+sglFillOval(mRect.left,mRect.top,mRect.right,mRect.bottom);
+sglSetColor("black");
+sglFrameOval(mRect.left,mRect.top,mRect.right,mRect.bottom);
+
+int ipe=inPlaceEditName();
+
+if(ipe!=1)
+{
+sglMoveTo(mX-mHalfTextWidth,mY);
+sglDrawText(mName);
+if(mFlags&ATTRIBUTE_FLAG_PK)
+{
+sglMoveTo(mX-mHalfTextWidth,mY);
+sglLineTo(mX+mHalfTextWidth,mY);
+}
+}
+if(ipe!=2)
+{
+sglMoveTo(mX-mHalfTypeTextWidth,mY+mFontHeight);
+sglDrawText(mType);
+}
+}
+
+InPlaceEdit*click(double x,double y)
+{
+const int k=12;
+if(x>=mRect.left+k&&x<=mRect.right-k&&
+y>=mRect.top+k&&y<=mRect.bottom-k&&
+y>=mRect.bottom-k-mFontHeight)
+{
+InPlaceEdit*ipe=new InPlaceEdit;
+ipe->init(this,2,mType,mX,mY+mFontHeight);
+return ipe;
+}
+return BoxElement::click(x,y);
+}
+
+void setAttribute(int name, const String&text)
+{
+if(name==2)
+setType(text);
+else
+BoxElement::setAttribute(name,text);
+}
+
+void setType( const String&type)
+{
+mType=type;
+changed();
+}
+
+void toggleFlag(int flag)
+{
+mFlags^=flag;
+}
+
+void saveID(OutputStream*stream)
+{
+stream->writeQuad(SID_ATTRIBUTE);
+}
+
+void saveData(Diagram*diagram,OutputStream*stream)
+{
+stream->writeString(mType);
+stream->writeQuad(mFlags);
+BoxElement::saveData(diagram,stream);
+}
+
+void loadData(Diagram*diagram,InputStream*stream)
+{
+mType=stream->readString();
+mFlags=stream->readQuad();
+BoxElement::loadData(diagram,stream);
+}
+
+void saveTableDDL(OutputStream&stream)
+{
+stream<<mName<<" "<<mType;
+if(mFlags&ATTRIBUTE_FLAG_PK)
+stream<<" primary key";
+}
+
+bool isPrimaryKey()
+{
+if(mFlags&ATTRIBUTE_FLAG_PK)
+return true;
+return false;
+}
+
+protected:
+void changed()
+{
+const int k=10;
+const float tws=1;
+int ascent=sglGetFontAscent();
+int descent=sglGetFontDescent();
+
+mHalfTextWidth=sglTextWidth(mName)*0.5;
+mHalfTypeTextWidth=sglTextWidth(mType)*0.5;
+float tw=max(mHalfTextWidth,mHalfTypeTextWidth);
+
+mFontHeight=ascent+descent;
+mRect.left=mX-tw*tws-k;
+mRect.right=mX+tw*tws+k;
+mRect.top=mY-ascent-k;
+mRect.bottom=mY+descent+k+mFontHeight;
+
+updateLinks();
+}
+
+String mType;
+float mHalfTypeTextWidth;
+float mFontHeight;
+int mFlags;
+}
+
+class Isa extends BoxElement{
+/*c */
+public:
+void draw()
+{
+float my=(mRect.top+mRect.bottom)*0.5;
+float dx=(mRect.right-mRect.left)*0.25;
+if(gExportColor||not gExportMode)
+sglSetColor("blue");
+else
+sglSetColor("white");
+glBegin(GL_POLYGON);
+glVertex2f(mRect.left,mRect.top);
+glVertex2f(mRect.right,mRect.top);
+glVertex2f(mRect.right+dx,my);
+glVertex2f(mRect.right,mRect.bottom);
+glVertex2f(mRect.left,mRect.bottom);
+glVertex2f(mRect.left-dx,my);
+glEnd();
+sglSetColor("black");
+glBegin(GL_LINE_STRIP);
+glVertex2f(mRect.left,mRect.top);
+glVertex2f(mRect.right,mRect.top);
+glVertex2f(mRect.right+dx,my);
+glVertex2f(mRect.right,mRect.bottom);
+glVertex2f(mRect.left,mRect.bottom);
+glVertex2f(mRect.left-dx,my);
+glVertex2f(mRect.left,mRect.top);
+glEnd();
+
+if(inPlaceEditName()!=1)
+{
+sglMoveTo(mX-mHalfTextWidth,mY);
+sglDrawText(mName);
+}
+}
+
+Entity*base()
+{
+LinkList*node=mLinks;
+while(node)
+{
+if(node->link->directed())
+return (Entity*)node->link->opposite(this);
+node=node->next;
+}
+return null;
+}
+
+void saveID(OutputStream*stream)
+{
+stream->writeQuad(SID_ISA);
+}
+
+protected:
+void changed()
+{
+const int k=10;
+const float tws=1;
+int ascent=sglGetFontAscent();
+int descent=sglGetFontDescent();
+float tw=sglTextWidth(mName)*0.5;
+
+mRect.left=mX-tw*tws-k;
+mRect.right=mX+tw*tws+k;
+mRect.top=mY-ascent-k;
+mRect.bottom=mY+descent+k;
+mHalfTextWidth=tw;
+
+updateLinks();
+}
+}
+
+enum {
+/*c */
+LINK_FLAG_DIRECTED=1,
+LINK_FLAG_BACK_LINK=2
+}
+
+class Link extends Element{
+/*c */
+public:
+void create()
+{
+mFlags=0;
+}
+
+void kill(Diagram*diagram)
+{
+mSource->removeLink(this);
+mTarget->removeLink(this);
+Element::kill(diagram);
+}
+
+void draw()
+{
+double sx,sy,tx,ty;
+sx=mSource->x();
+sy=mSource->y();
+tx=mTarget->x();
+ty=mTarget->y();
+if(mFlags&LINK_FLAG_BACK_LINK)
+{
+sx-=30;
+tx-=30;
+}
+
+glColor3f(0,0,0);
+glBegin(GL_LINES);
+glVertex2f(sx,sy);
+glVertex2f(tx,ty);
+glEnd();
+
+if(mFlags&LINK_FLAG_DIRECTED)
+{
+float dx,dy,d;
+dx=tx-sx;
+dy=ty-sy;
+d=sqrt(sqr(dx)+sqr(dy));
+float mx=sx+dx*0.5;
+float my=sy+dy*0.5;
+dx=(dx/d)*8;
+dy=(dy/d)*8;
+float phi=atan2(dy,dx)-pih;
+float wx=8*cos(phi);
+float wy=8*sin(phi);
+glBegin(GL_TRIANGLES);
+glVertex2f(mx+dx,my+dy);
+glVertex2f(mx-wx,my-wy);
+glVertex2f(mx+wx,my+wy);
+glEnd();
+}
+}
+
+InPlaceEdit*click(double x,double y)
+{
+return null;
+}
+
+bool inside(double x,double y)
+{
+double sx,sy,tx,ty;
+sx=mSource->x();
+sy=mSource->y();
+tx=mTarget->x();
+ty=mTarget->y();
+
+if(mFlags&LINK_FLAG_BACK_LINK)
+{
+sx-=30;
+tx-=30;
+}
+
+double mx,my,d;
+mx=tx-sx;
+my=ty-sy;
+/* d=sqrt(sqr(mx)+sqr(my));
+mx/=d;
+my/=d; */
+
+double dx,dy,t;
+dx=x-sx;
+dy=y-sy;
+t=dx*mx+dy*my;
+if(t>0)
+{
+double dm=sqr(mx)+sqr(my);
+if(t<dm)
+{
+t/=dm;
+dx-=t*mx;
+dy-=t*my;
+}
+else
+{
+t=1;
+dx-=mx;
+dy-=my;
+}
+}
+else
+t=0;
+
+if((sqr(dx)+sqr(dy))<16)
+return true;
+return false;
+}
+
+void setSourceAndTarget(BoxElement*source,BoxElement*target)
+{
+if(target->hasLinkTo(source))
+mFlags|=LINK_FLAG_BACK_LINK;
+
+mSource=source;
+mTarget=target;
+mSource->addLink(this);
+mTarget->addLink(this);
+changed();
+}
+
+void setDirected(bool directed)
+{
+if(directed)
+mFlags|=LINK_FLAG_DIRECTED;
+else
+mFlags&=~LINK_FLAG_DIRECTED;
+}
+
+bool directed()
+{
+return mFlags&LINK_FLAG_DIRECTED;
+}
+
+void changed()
+{
+}
+
+void saveID(OutputStream*stream)
+{
+stream->writeQuad(SID_REGULAR_LINK);
+}
+
+void saveData(Diagram*diagram,OutputStream*stream)
+{
+stream->writeQuad(diagram->elementIndex(mSource));
+stream->writeQuad(diagram->elementIndex(mTarget));
+stream->writeQuad(mFlags);
+}
+
+void loadData(Diagram*diagram,InputStream*stream)
+{
+BoxElement*source;
+BoxElement*target;
+source=(BoxElement*)diagram->nthElement(stream->readQuad());
+target=(BoxElement*)diagram->nthElement(stream->readQuad());
+setSourceAndTarget(source,target);
+mFlags=stream->readQuad();
+}
+
+BoxElement*opposite(BoxElement*element)
+{
+if(mSource==element)
+return mTarget;
+return mSource;
+}
+
+protected:
+BoxElement*mSource;
+BoxElement*mTarget;
+int mFlags;
+}
+
+class RelationLink extends Link,InPlaceClient{
+/*c */
+public:
+void create()
+{
+mX=0;
+mY=0;
+mConstraint="[0,n]";
+}
+
+void draw()
+{
+Link::draw();
+if(inPlaceEditName()!=1)
+{
+glColor3f(0.9,0.1,0.1);
+sglMoveTo(mX,mY);
+sglDrawText(mConstraint);
+}
+}
+
+InPlaceEdit*click(double x,double y)
+{
+if(x>=mRect.left&&x<=mRect.right&&
+y>=mRect.top&&y<=mRect.bottom)
+{
+InPlaceEdit*ipe=new InPlaceEdit;
+ipe->init(this,1,mConstraint,
+mX+0.5*sglTextWidth(mConstraint),mY);
+return ipe;
+}
+return null;
+}
+
+void setAttribute(int name, const String&text)
+{
+if(name==1)
+{
+mConstraint=text;
+changed();
+}
+}
+
+void changed()
+{
+double sx,sy,tx,ty;
+sx=mSource->x();
+sy=mSource->y();
+tx=mTarget->x();
+ty=mTarget->y();
+
+if(mFlags&LINK_FLAG_BACK_LINK)
+{
+sx-=30;
+tx-=30;
+}
+
+double dx,dy,phi,l;
+dx=tx-sx;
+dy=ty-sy;
+phi=atan2(dy,dx);
+l=sqrt(sqr(dx)+sqr(dy));
+l-=sqrt(sqr(mTarget->width())+sqr(mTarget->height()))*0.5;
+double tw=sglTextWidth(mConstraint);
+double cosphi=cos(phi);
+mX=sx+cosphi*(l-tw)-abs(cosphi)*tw*0.5;
+mY=sy+sin(phi)*l;
+
+int ascent=sglGetFontAscent();
+int descent=sglGetFontDescent();
+mRect.left=mX;
+mRect.top=mY-ascent;
+mRect.right=mX+tw;
+mRect.bottom=mY+descent;
+}
+
+void saveID(OutputStream*stream)
+{
+stream->writeQuad(SID_RELATION_LINK);
+}
+
+void saveData(Diagram*diagram,OutputStream*stream)
+{
+stream->writeString(mConstraint);
+Link::saveData(diagram,stream);
+}
+
+void loadData(Diagram*diagram,InputStream*stream)
+{
+mConstraint=stream->readString();
+Link::loadData(diagram,stream);
+}
+
+String min()
+{
+return mid(mConstraint,instr(mConstraint,"[")+1,1);
+}
+
+String max()
+{
+return mid(mConstraint,instr(mConstraint,",")+1,1);
+}
+
+private:
+double mX;
+double mY;
+Rect mRect;
+String mConstraint;
+}
+
+struct LinkList{
+Link*link;
+LinkList*next;
+}
+
+class Diagram{
+public:
+void draw()
+{
+int count=mElements.count();
+for(int i=0;i<count;i++)
+((Element*)mElements[i])->draw();
+}
+
+void addElement(Element *element)
+{
+if((Link*)element!=null)
+mElements.insert(0,element);
+else
+mElements.append(element);
+}
+
+void removeElement(Element *element)
+{
+int count=mElements.count();
+for(int i=0;i<count;i++)
+{
+Element *item=((Element*)mElements[i]);
+if(item==element)
+{
+mElements.remove(i);
+break;
+}
+}
+}
+
+Element *nthElement(int index)
+{
+return ((Element*)mElements[index]);
+}
+
+Element *findElement(double x,double y)
+{
+int count=mElements.count();
+for(int i=0;i<count;i++)
+{
+Element *element=((Element*)mElements[i]);
+if(element->inside(x,y))
+return element;
+}
+return null;
+}
+
+int elementIndex(Element *element)
+{
+int count=mElements.count();
+for(int i=0;i<count;i++)
+{
+Element *node=((Element*)mElements[i]);
+if(node==element)
+return i;
+}
+return -1;
+}
+
+InPlaceEdit *click(double x,double y)
+{
+InPlaceEdit *ipe;
+int count=mElements.count();
+for(int i=0;i<count;i++)
+{
+Element *element=((Element*)mElements[i]);
+ipe=element->click(x,y);
+if(ipe)
+return ipe;
+}
+return null;
+}
+
+void saveDDL(OutputStream *stream)
+{
+DDLExporter exporter;
+int count=mElements.count();
+for(int i=0;i<count;i++)
+{
+Element *element=((Element*)mElements[i]);
+exporter.add(element);
+}
+exporter.save(stream);
+}
+
+void save(OutputStream *stream)
+{
+stream->writeQuad('ERWi');
+int count=mElements.count();
+stream->writeQuad(count);
+for(int i=0;i<count;i++)
+{
+Element *element=((Element*)mElements[i]);
+element->saveID(stream);
+}
+for(int i=0;i<count;i++)
+{
+Element *element=((Element*)mElements[i]);
+element->saveData(this,stream);
+}
+}
+
+void load(InputStream *stream)
+{
+clear();
+if(stream->readQuad()!='ERWi')
+fatal("unknown file format");
+int count=stream->readQuad();
+for(int i=0;i<count;i++)
+{
+Element *element;
+
+switch(stream->readQuad())
+{
+case SID_ENTITY:
+element=new Entity;
+break;
+
+case SID_RELATION:
+element=new Relation;
+break;
+
+case SID_ATTRIBUTE:
+element=new Attribute;
+break;
+
+case SID_REGULAR_LINK:
+element=new Link;
+break;
+
+case SID_RELATION_LINK:
+element=new RelationLink;
+break;
+
+case SID_ISA:
+element=new Isa;
+break;
+
+default:
+fatal("unknown element type");
+}
+
+mElements.append(element);
+}
+
+for(int i=0;i<count;i++)
+nthElement(i)->loadData(this,stream);
+}
+
+void clear()
+{
+while(mElements.count()>0)
+((Element*)mElements[0])->kill(this);
+}
+
+bool findBounds(Rect *bounds)
+{
+int count=mElements.count();
+if(count<1)
+return false;
+double big=1e50;
+bounds->left=big;
+bounds->top=big;
+bounds->right=-big;
+bounds->bottom=-big;
+for(int i=0;i<count;i++)
+{
+Element *element=((Element*)mElements[i]);
+element->findBounds(bounds);
+}
+return true;
+}
+
+private:
+PointerArray mElements;
+}
+}
+
+module Interface{
+struct MenuItem{
+/*c */
+String name;
+int command;
+int flags;
+Menu*subMenu;
+}
+
+enum {
+/*c */
+MF_ACTIVATED=1
+}
+
+class Menu{
+/*c */
+public:
+void create()
+{
+mPreviousCommand=0;
+}
+
+void draw()
+{
+glEnable(GL_BLEND);
+glBlendFunc(GL_SRC_ALPHA,
+GL_ONE_MINUS_SRC_ALPHA);
+
+int y=10;
+const float alpha=0.75;
+int count=mItems.count();
+
+for(int i=0;i<count;i++)
+{
+MenuItem*item=(MenuItem*)mItems[i];
+if(item->flags&MF_ACTIVATED)
+glColor4f(1,0,0,alpha);
+else
+glColor4f(0.5,0.5,0.5,alpha);
+sglFillRect(10,y,100,y+20);
+sglSetColor("black");
+sglFrameRect(10,y,100,y+20);
+sglMoveTo(15,y+15);
+sglDrawText(item->name);
+y+=30;
+}
+
+glDisable(GL_BLEND);
+}
+
+bool click(int mx,int my)
+{
+int y=10;
+int count=mItems.count();
+for(int i=0;i<count;i++)
+{
+MenuItem*item=(MenuItem*)mItems[i];
+if(mx>=10&&my>=y&&
+mx<=100&&my<=y+20)
+{
+clickItem(item);
+return true;
+}
+y+=30;
+}
+
+return false;
+}
+
+void addItem(MenuItem*item)
+{
+mItems.append(item);
+}
+
+void addItem(String name,int command,int flags=0)
+{
+MenuItem*item=new MenuItem;
+item->name=name;
+item->command=command;
+item->flags=flags;
+item->subMenu=null;
+addItem(item);
+}
+
+void clickItem(MenuItem*item)
+{
+int count=mItems.count();
+for(int i=0;i<count;i++)
+{
+MenuItem*node=(MenuItem*)mItems[i];
+if(node->flags&MF_ACTIVATED)
+{
+mPreviousCommand=node->command;
+node->flags&=~MF_ACTIVATED;
+}
+}
+item->flags|=MF_ACTIVATED;
+}
+
+void selectByCommand(int command)
+{
+int count=mItems.count();
+for(int i=0;i<count;i++)
+{
+MenuItem*node=(MenuItem*)mItems[i];
+if(node->command==command)
+{
+clickItem(node);
+break;
+}
+}
+}
+
+int command()
+{
+int count=mItems.count();
+for(int i=0;i<count;i++)
+{
+MenuItem*node=(MenuItem*)mItems[i];
+if(node->flags&MF_ACTIVATED)
+return node->command;
+}
+return 0;
+}
+
+int previousCommand()
+{
+return mPreviousCommand;
+}
+
+private:
+PointerArray mItems;
+int mPreviousCommand;
+}
+
+class InPlaceClient{
+/*c */
+public:
+void create()
+{
+mInPlaceEditFlag=0;
+}
+
+abstract void setAttribute(int name, const String&text);
+
+void startInPlaceEdit(int name)
+{
+mInPlaceEditFlag++;
+mInPlaceEditName=name;
+}
+
+void stopInPlaceEdit()
+{
+mInPlaceEditFlag--;
+}
+
+int inPlaceEditName()
+{
+if(mInPlaceEditFlag==0)
+return 0;
+return mInPlaceEditName;
+}
+
+private:
+int mInPlaceEditFlag;
+int mInPlaceEditName;
+}
+
+class InPlaceEdit{
+/*c */
+public:
+void destroy()
+{
+mClient->stopInPlaceEdit();
+mBlinkTime=0;
+}
+
+void init(InPlaceClient*client,int name,
+const String&text,double x,double y)
+{
+mClient=client;
+mName=name;
+mX=x;
+mY=y;
+mText=text;
+mSelFrom=0;
+mSelTo=len(text);
+client->startInPlaceEdit(name);
+}
+
+void draw()
+{
+double x=mX;
+double y=mY;
+x-=sglTextWidth(mText)*0.5;
+
+sglMoveTo(x,y);
+sglDrawText(mText);
+
+int ascent=sglGetFontAscent();
+int descent=sglGetFontDescent();
+double x0,x1;
+
+glEnable(GL_BLEND);
+glBlendFunc(GL_SRC_ALPHA,
+GL_ONE_MINUS_SRC_ALPHA);
+glColor4f(0.2,0.2,0.2,0.4);
+x0=sglTextWidth(left(mText,mSelFrom));
+x1=sglTextWidth(left(mText,mSelTo));
+if(x1==x0)
+{
+if((((millis()-mBlinkTime)/500)&1)==0)
+x1=x0+2;
+}
+sglFillRect(x+x0,y-ascent,x+x1,y+descent);
+glDisable(GL_BLEND);
+}
+
+bool key(int c)
+{
+String s;
+int sel;
+
+if(c==13||c==10)
+{
+return true;
+}
+else if(c>=0)
+{
+if(c==8)
+{
+if(mSelFrom!=mSelTo)
+s=left(mText,mSelFrom);
+else if(mSelFrom>0)
+s=left(mText,mSelFrom-1);
+
+sel=len(s);
+s+=mid(mText,mSelTo);
+}
+else
+{
+s=left(mText,mSelFrom);
+s+=chr(c);
+sel=len(s);
+s+=mid(mText,mSelTo);
+}
+
+mText=s;
+mSelFrom=sel;
+mSelTo=sel;
+mClient->setAttribute(mName,mText);
+}
+else if(c==-(293-256))
+{
+// left arrow
+if(mSelFrom==mSelTo&&mSelFrom>0)
+mSelFrom--;
+mSelTo=mSelFrom;
+}
+else if(c==-(295-256))
+{
+// right arrow
+if(mSelFrom==mSelTo&&mSelTo<len(mText))
+mSelTo++;
+mSelFrom=mSelTo;
+}
+
+mBlinkTime=millis();
+return false;
+}
+
+private:
+InPlaceClient*mClient;
+int mName;
+double mX;
+double mY;
+String mText;
+int mSelFrom;
+int mSelTo;
+long mBlinkTime;
+}
+
+}
+
+module Main{
+/*c */
+
+enum {
+CMD_EDIT,
+CMD_NEW_ENTITY,
+CMD_NEW_RELATION,
+CMD_NEW_ATTRIBUTE,
+CMD_NEW_LINK,
+CMD_NEW_DIRECTED_LINK,
+CMD_NEW_ISA,
+CMD_DEL_ELEMENT,
+CMD_TOGGLE_PK,
+CMD_CENTER,
+CMD_SAVE,
+CMD_LOAD,
+CMD_EXPORT_IMAGE,
+CMD_EXPORT_DDL
+}
+
+class Playground{
+public:
+void create()
+{
+mScale=1;
+mOffsetX=0;
+mOffsetY=0;
+mScrollX=0;
+mScrollY=0;
+mLastApproach=millis();
+mTz=1;
+}
+
+void preDraw()
+{
+glLoadIdentity();
+glTranslatef(-mOffsetX,-mOffsetY,0);
+glScalef(mScale,mScale,1);
+}
+
+void postDraw()
+{
+glLoadIdentity();
+int scrw=screenWidth();
+int scrh=screenHeight();
+const int k=10;
+sglSetColor("black");
+if(mScrollIndX==1)
+{
+glBegin(GL_TRIANGLES);
+glVertex2f(scrw-k,scrh/2);
+glVertex2f(scrw-k-k,scrh/2-k);
+glVertex2f(scrw-k-k,scrh/2+k);
+glEnd();
+}
+if(mScrollIndX==-1)
+{
+glBegin(GL_TRIANGLES);
+glVertex2f(k,scrh/2);
+glVertex2f(k+k,scrh/2-k);
+glVertex2f(k+k,scrh/2+k);
+glEnd();
+}
+if(mScrollIndY==1)
+{
+glBegin(GL_TRIANGLES);
+glVertex2f(scrw/2,scrh-k);
+glVertex2f(scrw/2-k,scrh-k-k);
+glVertex2f(scrw/2+k,scrh-k-k);
+glEnd();
+}
+if(mScrollIndY==-1)
+{
+glBegin(GL_TRIANGLES);
+glVertex2f(scrw/2,k);
+glVertex2f(scrw/2-k,k+k);
+glVertex2f(scrw/2+k,k+k);
+glEnd();
+}
+}
+
+void idle()
+{
+double tz=1.0/(pow(1.1,-mousez()));
+if(tz!=mTz)
+changeScale(tz/mTz);
+mTz=tz;
+
+int mx=mousex();
+int my=mousey();
+int scrw=screenWidth();
+int scrh=screenHeight();
+
+const int limit=50;
+const float ms=2;
+
+int w;
+w=mx-(scrw-limit);
+mScrollIndX=0;
+mScrollIndY=0;
+
+if(w>0)
+{
+mScrollX+=ms*(w/(float)limit);
+mScrollIndX=1;
+}
+w=limit-mx;
+if(w>0)
+{
+mScrollX-=ms*(w/(float)limit);
+mScrollIndX=-1;
+}
+w=my-(scrh-limit);
+if(w>0)
+{
+mScrollY+=ms*(w/(float)limit);
+mScrollIndY=1;
+}
+w=limit-my;
+if(w>0)
+{
+mScrollY-=ms*(w/(float)limit);
+mScrollIndY=-1;
+}
+
+approachScrollTarget();
+}
+
+void changeScale(double delta)
+{
+double scale=mScale*delta;
+
+double cx,cy;
+if(scale>mScale)
+{
+cx=mousex();
+cy=mousey();
+}
+else
+{
+cx=screenWidth()*0.5;
+cy=screenHeight()*0.5;
+}
+
+double dx0,dy0;
+dx0=(cx+mOffsetX)/mScale;
+dy0=(cy+mOffsetY)/mScale;
+
+double dx1,dy1;
+dx1=(cx+mOffsetX)/scale;
+dy1=(cy+mOffsetY)/scale;
+
+double dx,dy;
+dx=(dx0-dx1)*scale;
+dy=(dy0-dy1)*scale;
+
+mOffsetX+=dx;
+mOffsetY+=dy;
+mScrollX+=dx;
+mScrollY+=dy;
+
+mScale=scale;
+}
+
+double smousex()
+{
+return (mousex()+mOffsetX)/mScale;
+}
+
+double smousey()
+{
+return (mousey()+mOffsetY)/mScale;
+}
+
+void zoomTo(double x0,double y0,
+double x1,double y1,
+double width,double height)
+{
+mScale=min(width/(x1-x0),height/(y1-y0));
+mOffsetX=x0*mScale;
+mOffsetY=y0*mScale;
+mScrollX=mOffsetX;
+mScrollY=mOffsetY;
+}
+
+abstract double screenWidth();
+
+abstract double screenHeight();
+
+private:
+void approachScrollTarget()
+{
+double d,ad;
+double tol=mScale/50;
+long now=millis();
+double q=(now-mLastApproach)/1000.0;
+if(q>1)
+q=1;
+q*=5;
+
+d=mScrollX-mOffsetX;
+ad=abs(d)*q;
+if(ad>tol)
+mOffsetX+=ad*sgn(d);
+d=mScrollY-mOffsetY;
+ad=abs(d)*q;
+if(ad>tol)
+mOffsetY+=ad*sgn(d);
+
+mLastApproach=now;
+}
+
+double mScale;
+double mOffsetX;
+double mOffsetY;
+double mScrollX;
+double mScrollY;
+int mScrollIndX;
+int mScrollIndY;
+long mLastApproach;
+double mTz;
+}
+
+class App extends Playground{
+public:
+void create()
+{
+mConsole.open();
+glEnable(GL_LINE_SMOOTH);
+sglLoadTextureFont("TexHelvetica");
+sglSetFont("TexHelvetica");
+setupMenu();
+mInPlaceEdit=null;
+mTempLink=null;
+gExportMode=false;
+}
+
+void poll()
+{
+draw();
+
+switch(mMenu->command())
+{
+case CMD_SAVE:
+save();
+break;
+
+case CMD_LOAD:
+load();
+break;
+
+case CMD_CENTER:
+center();
+mMenu->selectByCommand(mMenu->previousCommand());
+break;
+
+case CMD_EXPORT_IMAGE:
+exportImage();
+break;
+
+case CMD_EXPORT_DDL:
+exportDDL();
+break;
+}
+
+if(mousek())
+click();
+
+String s=inkey();
+int key=asc(s);
+if(key==0&&len(s)>1)
+{
+byte c=asc(mid(s,1));
+key=-(int)c;
+}
+if(key&&mInPlaceEdit)
+{
+if(mInPlaceEdit->key(key))
+{
+delete mInPlaceEdit;
+mInPlaceEdit=null;
+}
+}
+}
+
+void draw()
+{
+idle();
+
+if(gExportColor||not gExportMode)
+sglSetColor(0.75,0.75,0.75);
+else
+sglSetColor("white");
+sglClear();
+
+preDraw();
+if(mTempLink)
+{
+double sx=smousex();
+double sy=smousey();
+sglSetColor("black");
+glBegin(GL_LINES);
+glVertex2f(mTempLink->x(),mTempLink->y());
+glVertex2f(sx,sy);
+glEnd();
+}
+mDiagram.draw();
+if(mInPlaceEdit)
+mInPlaceEdit->draw();
+postDraw();
+
+if(not gExportMode)
+{
+glLoadIdentity();
+mMenu->draw();
+
+mConsole.swap();
+}
+}
+
+void click()
+{
+int x=mousex();
+int y=mousey();
+
+if(mMenu->click(x,y))
+return;
+
+int command=mMenu->command();
+double sx=smousex();
+double sy=smousey();
+
+// edit mode?
+if(mInPlaceEdit)
+{
+delete mInPlaceEdit;
+mInPlaceEdit=null;
+}
+
+InPlaceEdit*ipe=null;
+if(command==CMD_EDIT)
+ipe=mDiagram.click(sx,sy);
+if(ipe)
+{
+mInPlaceEdit=ipe;
+}
+else
+{
+// regular modes
+Element*element=mDiagram.findElement(sx,sy);
+Draggable*draggable=null;
+if(command==CMD_NEW_LINK)
+createLink(element,false);
+else if(command==CMD_NEW_DIRECTED_LINK)
+createLink(element,true);
+if(element)
+{
+if(command==CMD_DEL_ELEMENT)
+element->kill(&mDiagram);
+else if(command==CMD_TOGGLE_PK)
+togglePrimaryKey(element);
+else
+draggable=element->draggable();
+}
+if(draggable)
+drag(draggable,sx,sy);
+else if(command==CMD_NEW_ENTITY)
+createEntity(sx,sy);
+else if(command==CMD_NEW_RELATION)
+createRelation(sx,sy);
+else if(command==CMD_NEW_ATTRIBUTE)
+createAttribute(sx,sy);
+else if(command==CMD_NEW_ISA)
+createIsa(sx,sy);
+}
+
+while(mousek())
+draw();
+}
+
+void save()
+{
+while(mousek())
+draw();
+SaveFileChooser chooser;
+String path;
+if(chooser.choose(path))
+{
+File stream;
+stream.openForWriting(path);
+mDiagram.save(&stream);
+}
+mMenu->selectByCommand(mMenu->previousCommand());
+}
+
+void load()
+{
+while(mousek())
+draw();
+OpenFileChooser chooser;
+String path;
+if(chooser.choose(path))
+{
+File stream;
+stream.openForReading(path);
+mDiagram.load(&stream);
+center();
+}
+mMenu->selectByCommand(mMenu->previousCommand());
+}
+
+void exportImage()
+{
+G2Pixmap pixmap;
+int size=3000;
+pixmap.allocate(size,size);
+sglLoadTextureFont("TexHelvetica");
+sglSetFont("TexHelvetica");
+glEnable(GL_LINE_SMOOTH);
+Rect r;
+if(not mDiagram.findBounds(&r))
+return;
+zoomTo(r.left,r.top,r.right,r.bottom,size,size);
+gExportMode=true;
+draw();
+glFinish();
+gExportMode=false;
+pixmap.save("image");
+mMenu->selectByCommand(mMenu->previousCommand());
+mConsole.makeCurrent();
+center();
+}
+
+void exportDDL()
+{
+File file;
+file.openForWriting("tables.txt");
+mDiagram.saveDDL(&file);
+mMenu->selectByCommand(mMenu->previousCommand());
+}
+
+double screenWidth()
+{
+return mConsole.width();
+}
+
+double screenHeight()
+{
+return mConsole.height();
+}
+
+protected:
+void togglePrimaryKey(Element*element)
+{
+Attribute*attribute=(Attribute*)element;
+if(attribute==null)
+return;
+attribute->toggleFlag(ATTRIBUTE_FLAG_PK);
+}
+
+void createEntity(double x,double y)
+{
+Entity*entity=new Entity;
+entity->setName("untitled");
+entity->moveTo(x,y);
+mDiagram.addElement(entity);
+}
+
+void createRelation(double x,double y)
+{
+Relation*relation=new Relation;
+relation->setName("untitled");
+relation->moveTo(x,y);
+mDiagram.addElement(relation);
+}
+
+void createAttribute(double x,double y)
+{
+Attribute*attribute=new Attribute;
+attribute->setName("untitled");
+attribute->moveTo(x,y);
+mDiagram.addElement(attribute);
+}
+
+void createIsa(double x,double y)
+{
+Isa*attribute=new Isa;
+attribute->setName("is-a");
+attribute->moveTo(x,y);
+mDiagram.addElement(attribute);
+}
+
+void createLink(Element*element,bool directed)
+{
+if(mTempLink==null)
+mTempLink=(BoxElement*)element;
+else
+{
+BoxElement*source=mTempLink;
+BoxElement*target=(BoxElement*)element;
+if(target&&source!=target)
+{
+Link*link;
+if((Relation*)source&&(Entity*)target)
+link=new RelationLink;
+else if((Relation*)target&&(Entity*)source)
+{
+link=new RelationLink;
+BoxElement*h=source;
+source=target;
+target=h;
+}
+else
+link=new Link;
+link->setSourceAndTarget(source,target);
+link->setDirected(directed);
+mDiagram.addElement(link);
+}
+mTempLink=null;
+}
+while(mousek())
+draw();
+}
+
+void drag(Draggable*box,double sx,double sy)
+{
+double bx=box->x();
+double by=box->y();
+while(mousek())
+{
+double dx=smousex()-sx;
+double dy=smousey()-sy;
+box->moveTo(bx+dx,by+dy);
+draw();
+}
+}
+
+void center()
+{
+Rect r;
+if(not mDiagram.findBounds(&r))
+return;
+zoomTo(r.left,r.top,r.right,r.bottom,screenWidth(),screenHeight());
+}
+
+void setupMenu()
+{
+mMenu=new Menu;
+mMenu->addItem("Edit",CMD_EDIT);
+mMenu->addItem("Add Entity",CMD_NEW_ENTITY,MF_ACTIVATED);
+mMenu->addItem("Add Relation",CMD_NEW_RELATION);
+mMenu->addItem("Add Attribute",CMD_NEW_ATTRIBUTE);
+mMenu->addItem("Add Link",CMD_NEW_LINK);
+mMenu->addItem("Add Dir Link",CMD_NEW_DIRECTED_LINK);
+mMenu->addItem("Add Isa",CMD_NEW_ISA);
+mMenu->addItem("Delete Element",CMD_DEL_ELEMENT);
+mMenu->addItem("Toggle PK",CMD_TOGGLE_PK);
+mMenu->addItem("Center",CMD_CENTER);
+mMenu->addItem("Save",CMD_SAVE);
+mMenu->addItem("Load",CMD_LOAD);
+mMenu->addItem("Export Image",CMD_EXPORT_IMAGE);
+mMenu->addItem("Export DDL",CMD_EXPORT_DDL);
+}
+
+private:
+G2Console mConsole;
+Diagram mDiagram;
+Menu*mMenu;
+InPlaceEdit*mInPlaceEdit;
+BoxElement*mTempLink;
+}
+
+}
+
+void main()
+{
+/*c */
+App app;
+
+while(true)
+{
+app.poll();
+}
+}
+

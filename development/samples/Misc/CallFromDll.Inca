@@ -1,0 +1,16 @@
+// this sample shows how to call functions imported
+// from DLLs from Inca - here, the sample dll "abc.dll"
+// is imported, more precisely the function test with the
+// given prototype - since this is only a sample, this
+// program won't work, since there's no "abc.dll" - it's
+// just here to illustrate the concept
+
+import_dll "abc.dll"{
+void test(int x);
+}
+
+void main()
+{
+test(3);
+}
+

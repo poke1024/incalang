@@ -1,0 +1,27 @@
+// shows how to use streams and the zlib engine
+
+void main()
+{
+File fs;
+
+fs.openForUpdating("test.txt");
+DeflaterStream ds;
+ds.attach(&fs);
+
+String t;
+t="Hello World this is a test if compression is really worth the effort";
+t+=" - as it turns out as the string grows longer - it seems to be indeed";
+ds.writeString(t);
+ds.flush();
+print<<"compressed size: "<<fs.size()<<endl;
+print<<"uncompressed size: "<<len(t)<<endl;
+
+fs.seekAbsolute(0);
+InflaterStream is;
+is.attach(&fs,fs.size());
+
+print<<endl;
+print<<"uncompressed string: "<<endl;
+print<<is.readString();
+}
+

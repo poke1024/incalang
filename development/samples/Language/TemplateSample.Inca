@@ -1,0 +1,20 @@
+// an example how to define a template function
+
+// the swap function in this sample swaps two
+// variables, no matter which type they are
+
+template T void swap(T &a,T &b)
+{
+T c;
+c=a;
+a=b;
+b=c;
+}
+
+void main()
+{
+int a=1;
+int b=2;
+swap of <float >(a,b);
+print<<a<<endl<<b;
+}

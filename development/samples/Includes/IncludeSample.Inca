@@ -1,0 +1,9 @@
+// example to show how to use include files in Inca
+
+include "MyInclude.Inca"
+
+void main()
+{
+f();
+}
+

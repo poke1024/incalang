@@ -1,0 +1,57 @@
+// sample code to show how to create an IntMatrix
+// class that acts as a two dimensional matrix of
+// integers of dynamic size - further enhancements
+// might include overriding the * operator
+
+class IntMatrix{
+public:
+void create()
+{
+mArray=null;
+mDim[0]=0;
+mDim[1]=0;
+}
+
+void destroy()
+{
+cleanup();
+}
+
+void dim(int x,int y)
+{
+cleanup();
+mDim[0]=x;
+mDim[1]=y;
+mArray=new int[x*y];
+}
+
+int &at(int x,int y)
+{
+if(x<0||x>=mDim[0])
+fatal("illegal array access");
+if(y<0||y>=mDim[1])
+fatal("illegal array access");
+return mArray[x+y*mDim[0]];
+}
+
+private:
+void cleanup()
+{
+if(mArray)
+{
+delete mArray;
+mArray=null;
+}
+}
+
+int *mArray;
+int mDim[2];
+}
+
+void main()
+{
+IntMatrix m;
+m.dim(10,10);
+m.at(0,0)=15;
+print<<m.at(0,0);
+}

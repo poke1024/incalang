@@ -1,0 +1,10 @@
+void main()
+{
+OpenFileChooser dialog;
+String path;
+if(dialog.choose(path))
+print<<"you chose "<<path<<endl;
+else
+print<<"you chose nothing"<<endl;
+}
+

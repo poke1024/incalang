@@ -1,0 +1,118 @@
+// A standard OpenGL texturing example from the Red Book
+
+const int checkImageHeight=64;
+const int checkImageWidth=64;
+
+GLubyte checkImage[checkImageHeight][checkImageWidth][4];
+GLubyte otherImage[checkImageHeight][checkImageWidth][4];
+GLuint texName[2];
+
+void makeCheckImages()
+{
+/*c */
+int i,j,c;
+
+for(i=0;i<checkImageHeight;i++)
+{
+for(j=0;j<checkImageWidth;j++)
+{
+c=((((i&0x08)==0)^((j&0x08))==0))*255;
+checkImage[i][j][0]=c;
+checkImage[i][j][1]=c;
+checkImage[i][j][2]=c;
+checkImage[i][j][3]=255;
+c=((((i&0x10)==0)^((j&0x10))==0))*255;
+otherImage[i][j][0]=c;
+otherImage[i][j][1]=0;
+otherImage[i][j][2]=0;
+otherImage[i][j][3]=255;
+}
+}
+}
+
+void init()
+{
+glClearColor(0,0,0,0);
+glShadeModel(GL_FLAT);
+glEnable(GL_DEPTH_TEST);
+
+makeCheckImages();
+glPixelStorei(GL_UNPACK_ALIGNMENT,1);
+
+glGenTextures(2,texName);
+glBindTexture(GL_TEXTURE_2D,texName[0]);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,checkImageWidth,
+checkImageHeight,0,GL_RGBA,GL_UNSIGNED_BYTE,
+checkImage);
+
+glBindTexture(GL_TEXTURE_2D,texName[1]);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_S,GL_CLAMP);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_WRAP_T,GL_CLAMP);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_NEAREST);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_NEAREST);
+glTexEnvf(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_DECAL);
+glTexImage2D(GL_TEXTURE_2D,0,GL_RGBA,checkImageWidth,
+checkImageHeight,0,GL_RGBA,GL_UNSIGNED_BYTE,
+otherImage);
+glEnable(GL_TEXTURE_2D);
+}
+
+void main()
+{
+G3Console console;
+
+console.open();
+
+init();
+
+while(inkey()=="")
+{
+if(console.resized())
+{
+float width=console.width();
+float height=console.height();
+
+glViewport(0,0,width,height);
+glMatrixMode(GL_PROJECTION);
+glLoadIdentity();
+gluPerspective(60,width/height,1.0,30.0);
+glMatrixMode(GL_MODELVIEW);
+glLoadIdentity();
+glTranslatef(0,0,-3.6);
+}
+
+glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+glBindTexture(GL_TEXTURE_2D,texName[0]);
+glBegin(GL_QUADS);
+glTexCoord2f(0.0,0.0);
+glVertex3f(-2.0,-1.0,0);
+glTexCoord2f(0.0,1.0);
+glVertex3f(-2.0,1.0,0);
+glTexCoord2f(1.0,1.0);
+glVertex3f(0.0,1.0,0);
+glTexCoord2f(1.0,0.0);
+glVertex3f(0,-1,0);
+glEnd();
+
+glBindTexture(GL_TEXTURE_2D,texName[1]);
+glBegin(GL_QUADS);
+glTexCoord2f(0.0,0.0);
+
+glVertex3f(1.0,-1.0,0.0);
+glTexCoord2f(0.0,1.0);
+glVertex3f(1.0,1.0,0.0);
+glTexCoord2f(1.0,1.0);
+glVertex3f(2.41421,1.0,-1.41421);
+glTexCoord2f(1.0,0.0);
+glVertex3f(2.41421,-1.0,-1.41421);
+glEnd();
+
+console.swap();
+}
+}
+
+

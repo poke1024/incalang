@@ -1,0 +1,10 @@
+// shows how to use sort() to sort a sequence of numbers
+
+void main()
+{
+int a[14]={3,6,2,1,7,2,5,12,5,1,43,1,4221,32};
+
+sort(a,14);
+for(int i=0;i<14;i++)
+print<<a[i]<<endl;
+}

@@ -1,0 +1,27 @@
+// this sample shows how to use the simplified
+// 2d drawing console G2Console together with
+// the simplified set of drawing commands, all
+// starting with sgl...
+
+void main()
+{
+G2Console console;
+
+console.open();
+
+while(inkey()=="")
+{
+sglSetColor(0,0,0);
+sglClear();
+sglSetColor(1,1,1);
+for(int i=0;i<100;i++)
+{
+sglMoveTo(50,150);
+sglSetColor(color(i));
+sglLineTo(200+i*4,400);
+}
+sglMoveTo(200,100);
+sglDrawText("Hello World!");
+console.swap();
+}
+}

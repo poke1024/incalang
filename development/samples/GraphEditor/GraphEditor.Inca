@@ -1,0 +1,537 @@
+// A simple editor for directed graphs - sample code
+
+struct Node{
+String name;
+Color frameColor;
+Color innerColor;
+double x;
+double y;
+
+double left,right,top,bottom;
+int tw;
+double mx,my;
+}
+
+struct Edge{
+Node *from;
+Node *to;
+double w;
+Color color;
+}
+
+class Graph{
+public:
+static void drawEdge(Node *from,Node *to)
+{
+float x1=from->mx;
+float y1=from->my;
+float x2=to->mx;
+float y2=to->my;
+
+float dx=x1-x2;
+float dy=y1-y2;
+float phi=atan2(dy,dx);
+
+float ex=(to->right-to->left)*0.5;
+float ey=(to->bottom-to->top)*0.5;
+
+x2+=ex*cos(phi);
+y2+=ey*sin(phi);
+
+drawEdge(x1,y1,x2,y2);
+}
+
+static void drawEdge(float x1,float y1,float x2,float y2)
+{
+const float r=10;
+sglMoveTo(x1,y1);
+sglLineTo(x2,y2);
+sglFlush();
+
+float phi=atan2(y1-y2,x1-x2);
+float gamma=rad(30);
+float alpha;
+
+glBegin(GL_TRIANGLES);
+alpha=phi+gamma;
+glVertex2f(x2,y2);
+glVertex2f(x2+cos(alpha)*r,y2+sin(alpha)*r);
+alpha=phi-gamma;
+glVertex2f(x2+cos(alpha)*r,y2+sin(alpha)*r);
+glEnd();
+}
+
+void draw()
+{
+for(int i=0;i<mEdges.count();i++)
+{
+Edge *edge=nthEdge(i);
+sglSetColor(edge->color);
+glLineWidth(clamp(edge->w,0.1,2));
+drawEdge(edge->from,edge->to);
+}
+glLineWidth(1.0);
+
+for(int i=0;i<mNodes.count();i++)
+{
+Node *node=nthNode(i);
+
+sglSetColor(node->innerColor);
+sglFillOval(node->left,node->top,
+node->right,node->bottom);
+sglSetColor(node->frameColor);
+sglFrameOval(node->left,node->top,
+node->right,node->bottom);
+//sglFrameRect( node->left, node->top,
+//node->right, node->bottom );
+
+sglSetColor("black");
+sglMoveTo(node->x-node->tw*0.5,node->y);
+sglDrawText(node->name);
+}
+}
+
+Node *pickNode(int x,int y)
+{
+for(int i=0;i<mNodes.count();i++)
+{
+Node *node=nthNode(i);
+if(x>=node->left&&x<=node->right&&
+y>=node->top&&y<=node->bottom)
+{
+float dx=x-node->mx;
+float dy=y-node->my;
+dx/=(node->right-node->left)*0.5;
+dy/=(node->bottom-node->top)*0.5;
+if(sqrt(sqr(dx)+sqr(dy))<1)
+return node;
+}
+}
+
+return null;
+}
+
+void add(Node *node)
+{
+mNodes.append(node);
+}
+
+void remove(Node *node)
+{
+for(int i=0;i<mNodes.count();i++)
+{
+if(nthNode(i)==node)
+{
+mNodes.remove(i);
+break;
+}
+}
+}
+
+void update(Node *node)
+{
+const int k=8;
+int ascent=sglGetFontAscent();
+int descent=sglGetFontDescent();
+
+int tw=sglTextWidth(node->name);
+node->left=node->x-tw/2-k;
+node->right=node->x+tw/2+k;
+node->top=node->y-ascent-k;
+node->bottom=node->y+descent+k;
+node->tw=tw;
+
+node->mx=0.5*(node->right+node->left);
+node->my=0.5*(node->bottom+node->top);
+}
+
+void add(Edge *edge)
+{
+mEdges.append(edge);
+}
+
+Node *nthNode(int n)
+{
+return (Node*)mNodes[n];
+}
+
+Edge *nthEdge(int n)
+{
+return (Edge*)mEdges[n];
+}
+
+private:
+PointerArray mNodes;
+PointerArray mEdges;
+}
+
+struct MenuItem{
+String name;
+int command;
+}
+
+enum {
+CMD_NEW_NODE,
+CMD_DEL_NODE,
+CMD_NEW_EDGE
+}
+
+class App{
+public:
+void create()
+{
+mConsole.open();
+glEnable(GL_LINE_SMOOTH);
+sglLoadTextureFont("TexHelvetica");
+sglSetFont("TexHelvetica");
+
+setupMenu();
+mCommand=CMD_NEW_NODE;
+mTempEdge=false;
+
+mScale=1;
+mOffsetX=0;
+mOffsetY=0;
+mScrollX=0;
+mScrollY=0;
+}
+
+void scroll()
+{
+setScale(1.0/(pow(1.1,-mousez())));
+
+int mx=mousex();
+int my=mousey();
+int scrw=mConsole.width();
+int scrh=mConsole.height();
+const int limit=50;
+const float ms=2;
+int w;
+w=mx-(scrw-limit);
+if(w>0)
+mScrollX+=ms*(w/(float)limit);
+w=limit-mx;
+if(w>0)
+mScrollX-=ms*(w/(float)limit);
+w=my-(scrh-limit);
+if(w>0)
+mScrollY+=ms*(w/(float)limit);
+w=limit-my;
+if(w>0)
+mScrollY-=ms*(w/(float)limit);
+
+scrollTo(mScrollX,mScrollY);
+}
+
+void draw()
+{
+scroll();
+
+sglSetColor(0.75,0.75,0.75);
+sglClear();
+
+glLoadIdentity();
+glTranslatef(-mOffsetX,-mOffsetY,0);
+glScalef(mScale,mScale,1);
+drawTempEdge();
+mGraph.draw();
+
+glLoadIdentity();
+drawUI();
+
+mConsole.swap();
+}
+
+void drawTempEdge()
+{
+if(mTempEdge)
+{
+sglSetColor("red");
+if(mTempEdgeNode[1])
+Graph::drawEdge(mTempEdgeNode[0],mTempEdgeNode[1]);
+else
+Graph::drawEdge(mTempEdgeCoord[0],mTempEdgeCoord[1],
+mTempEdgeCoord[2],mTempEdgeCoord[3]);
+}
+}
+
+void mouseDown(double x,double y,int button)
+{
+if(mouseDownUI(x,y))
+return;
+
+x+=mOffsetX;
+x/=mScale;
+y+=mOffsetY;
+y/=mScale;
+
+Node *node;
+node=mGraph.pickNode(x,y);
+
+switch(mCommand)
+{
+case CMD_NEW_NODE:
+if(node)
+dragNode(node,x,y);
+else
+createNode(x,y);
+break;
+
+case CMD_DEL_NODE:
+if(node)
+{
+mGraph.remove(node);
+delete node;
+}
+break;
+
+case CMD_NEW_EDGE:
+if(node)
+createEdge(node);
+break;
+}
+
+draw();
+}
+
+void setScale(double scale)
+{
+if(scale!=mScale)
+{
+double cx,cy;
+if(scale>mScale)
+{
+cx=mousex();
+cy=mousey();
+}
+else
+{
+cx=mConsole.width()*0.5;
+cy=mConsole.height()*0.5;
+}
+
+double dx0,dy0;
+dx0=(cx+mOffsetX)/mScale;
+dy0=(cy+mOffsetY)/mScale;
+
+double dx1,dy1;
+dx1=(cx+mOffsetX)/scale;
+dy1=(cy+mOffsetY)/scale;
+
+double dx,dy;
+dx=(dx0-dx1)*scale;
+dy=(dy0-dy1)*scale;
+
+mOffsetX+=dx;
+mOffsetY+=dy;
+mScrollX+=dx;
+mScrollY+=dy;
+}
+mScale=scale;
+}
+
+void scrollTo(double x,double y)
+{
+double d,ad;
+double tol=mScale/50;
+d=x-mOffsetX;
+ad=abs(d)*0.05;
+if(ad>tol)
+mOffsetX+=ad*sgn(d);
+d=y-mOffsetY;
+ad=abs(d)*0.01;
+if(ad>tol)
+mOffsetY+=ad*sgn(d);
+}
+
+protected:
+bool mouseDownUI(int mx,int my)
+{
+int y=10;
+for(int i=0;i<mMenuCount;i++)
+{
+MenuItem *item=&mMenu[i];
+if(mx>=10&&my>=y&&
+mx<=100&&my<=y+20)
+{
+mCommand=item->command;
+draw();
+return true;
+}
+y+=30;
+}
+
+return false;
+}
+
+void drawUI()
+{
+glEnable(GL_BLEND);
+glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+
+int y=10;
+const float alpha=0.75;
+
+for(int i=0;i<mMenuCount;i++)
+{
+MenuItem *item=&mMenu[i];
+if(mCommand==item->command)
+glColor4f(1,0,0,alpha);
+else
+glColor4f(0.5,0.5,0.5,alpha);
+sglFillRect(10,y,100,y+20);
+sglSetColor("black");
+sglFrameRect(10,y,100,y+20);
+sglMoveTo(15,y+15);
+sglDrawText(item->name);
+y+=30;
+}
+
+glDisable(GL_BLEND);
+}
+
+void createNode(double x,double y)
+{
+Node *node=new Node;
+node->name="untitled";
+node->innerColor=color("yellow");
+node->frameColor=color("black");
+node->x=x;
+node->y=y;
+mGraph.update(node);
+mGraph.add(node);
+}
+
+void dragNode(Node *node,int ix,int iy)
+{
+int bx=node->x;
+int by=node->y;
+while(mousek())
+{
+int dx=smousex()-ix;
+int dy=smousey()-iy;
+node->x=bx+dx;
+node->y=by+dy;
+mGraph.update(node);
+draw();
+}
+}
+
+void createEdge(Node *node)
+{
+mTempEdge=true;
+mTempEdgeCoord[0]=node->x;
+mTempEdgeCoord[1]=node->y;
+node->frameColor=color("red");
+Node *target=null;
+
+while(mousek())
+systemTask();
+
+while(not mousek())
+{
+double mx=smousex();
+double my=smousey();
+target=mGraph.pickNode(mx,my);
+if(target==node)
+target=null;
+
+if(target)
+{
+mTempEdgeNode[0]=node;
+mTempEdgeNode[1]=target;
+target->frameColor=color("red");
+}
+else
+{
+mTempEdgeCoord[2]=mx;
+mTempEdgeCoord[3]=my;
+mTempEdgeNode[0]=null;
+mTempEdgeNode[1]=null;
+}
+
+draw();
+if(target)
+target->frameColor=color("black");
+}
+
+while(mousek())
+systemTask();
+
+node->frameColor=color("black");
+mTempEdge=false;
+
+if(target)
+{
+Edge *edge=new Edge;
+edge->from=node;
+edge->to=target;
+edge->w=1.0;
+edge->color=color("black");
+mGraph.add(edge);
+}
+}
+
+void setupMenu()
+{
+mMenuCount=3;
+mMenu=new MenuItem[mMenuCount];
+mMenu[0].name="New Node";
+mMenu[0].command=CMD_NEW_NODE;
+mMenu[1].name="Delete Node";
+mMenu[1].command=CMD_DEL_NODE;
+mMenu[2].name="New Edge";
+mMenu[2].command=CMD_NEW_EDGE;
+}
+
+double smousex()
+{
+return (mousex()+mOffsetX)/mScale;
+}
+
+double smousey()
+{
+return (mousey()+mOffsetY)/mScale;
+}
+
+private:
+G2Console mConsole;
+Graph mGraph;
+
+double mScale;
+double mOffsetX;
+double mOffsetY;
+double mScrollX;
+double mScrollY;
+
+MenuItem *mMenu;
+int mMenuCount;
+int mCommand;
+
+bool mTempEdge;
+int mTempEdgeCoord[4];
+Node *mTempEdgeNode[2];
+}
+
+void main()
+{
+App app;
+
+while(true)
+{
+int button=0;
+
+for(int i=0;i<3;i++)
+if(mousek(i))
+button=i+1;
+
+int mx=mousex();
+int my=mousey();
+
+if(button)
+app.mouseDown(mx,my,button);
+
+app.draw();
+}
+}
+

@@ -1,0 +1,186 @@
+//------------------------------------------------------------------------
+//
+// Author      : Jan Horn
+// Email       : jhorn@global.co.za
+// Website     : http://home.global.co.za/~jhorn
+// Date        : 14 April 2001
+// Version     : 1.0
+// Description : Bouncing Ball
+//
+//------------------------------------------------------------------------
+
+// Ported to Inca by B. Liebl
+
+int elapsedTime;
+
+GLuint floorTex;
+GLuint ballTex;
+GLuint reflectTex;
+
+GLUquadric *myQuadratic;
+
+GLuint loadTexture(String path)
+{
+GLuint tex;
+
+Pixmap pixmap;
+pixmap.load(path);
+pixmap.convert(PIXEL_FORMAT_24_RGB);
+
+glGenTextures(1,&tex);
+glBindTexture(GL_TEXTURE_2D,tex);
+glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
+
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+
+gluBuild2DMipmaps(GL_TEXTURE_2D,3,
+pixmap.width(),pixmap.height(),
+GL_RGB,GL_UNSIGNED_BYTE,pixmap.pixels());
+
+return tex;
+}
+
+void draw()
+{
+GLfloat ballY,angle;
+GLfloat xSize,ySize;
+
+glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+glLoadIdentity();
+
+angle=elapsedTime/60.0;
+
+glTranslatef(0.0,-0.3,-2.5);
+glRotatef(25,1.0,0.0,0.0);
+glRotatef(angle,0.0,1.0,0.0);
+
+// calculate the ball position
+ballY=abs(0.9*sin(angle/16));
+if(ballY<0.3)
+ySize=1/(1+(0.3-ballY));
+else
+ySize=1;
+xSize=2-ySize;
+
+glPushMatrix();
+
+// draw the main ball
+// draw the ball with standard textures
+glScalef(xSize,ySize,xSize);
+glFrontFace(GL_CCW);
+glBlendFunc(GL_SRC_ALPHA,GL_ONE);
+glDisable(GL_BLEND);
+glBindTexture(GL_TEXTURE_2D,ballTex);
+glTranslatef(0.0,0.1+ballY,0);
+gluSphere(myQuadratic,0.3,32,32);
+
+// draw a sphere of the environment
+glEnable(GL_BLEND);
+glEnable(GL_TEXTURE_GEN_S);
+glEnable(GL_TEXTURE_GEN_T);
+glDepthFunc(GL_LEQUAL);
+glBindTexture(GL_TEXTURE_2D,reflectTex);
+gluSphere(myQuadratic,0.3,32,32);
+
+glPopMatrix();
+glPushMatrix();
+
+// draw the reflection of the ball
+// draw the ball using standard texture
+glFrontFace(GL_CW);
+glScalef(xSize,ySize,xSize);
+glDisable(GL_BLEND);
+glDisable(GL_TEXTURE_GEN_S);
+glDisable(GL_TEXTURE_GEN_T);
+glBindTexture(GL_TEXTURE_2D,ballTex);
+glColor3f(0.4,0.4,0.4);
+glTranslatef(0.0,-0.1-ballY,0);
+gluSphere(myQuadratic,0.3,24,24);
+// draw a sphere of the environment
+glEnable(GL_BLEND);
+glEnable(GL_TEXTURE_GEN_S);
+glEnable(GL_TEXTURE_GEN_T);
+glDepthFunc(GL_LEQUAL);
+glBindTexture(GL_TEXTURE_2D,reflectTex);
+gluSphere(myQuadratic,0.3,24,24);
+
+glPopMatrix();
+
+// draw the floor
+glEnable(GL_BLEND);
+glBlendFunc(GL_SRC_ALPHA,GL_ONE);
+glDepthFunc(GL_LESS);
+glDisable(GL_TEXTURE_GEN_S);
+glDisable(GL_TEXTURE_GEN_T);
+glColor4f(1.0,1.0,1.0,0.8);
+glBindTexture(GL_TEXTURE_2D,floorTex);
+glBegin(GL_QUADS);
+glTexCoord2f(0.0,0.0);
+glVertex3f(-1.0,0.0,1.0);
+glTexCoord2f(1.0,0.0);
+glVertex3f(1.0,0.0,1.0);
+glTexCoord2f(1.0,1.0);
+glVertex3f(1.0,0.0,-1.0);
+glTexCoord2f(0.0,1.0);
+glVertex3f(-1.0,0.0,-1.0);
+glEnd();
+}
+
+void init()
+{
+glClearColor(0.0,0.0,0.0,0.0);
+glShadeModel(GL_SMOOTH);
+glClearDepth(1.0);
+glEnable(GL_DEPTH_TEST);
+glDepthFunc(GL_LESS);
+
+glHint(GL_PERSPECTIVE_CORRECTION_HINT,GL_NICEST);
+
+myQuadratic=gluNewQuadric();
+gluQuadricNormals(myQuadratic,GLU_SMOOTH);
+gluQuadricTexture(myQuadratic,GL_TRUE);
+
+glEnable(GL_TEXTURE_2D);
+glTexGenf(GL_S,GL_TEXTURE_GEN_MODE,GL_SPHERE_MAP);
+glTexGenf(GL_T,GL_TEXTURE_GEN_MODE,GL_SPHERE_MAP);
+
+floorTex=loadTexture("images/floor.tga");
+ballTex=loadTexture("images/ball.tga");
+reflectTex=loadTexture("images/reflection.tga");
+}
+
+void main()
+{
+G3Console console;
+
+console.open();
+init();
+
+long demoStart=millis();
+int lastTime;
+elapsedTime=0;
+
+while(inkey()=="")
+{
+if(console.resized())
+{
+float width=console.width();
+float height=console.height();
+glViewport(0,0,width,height);
+glMatrixMode(GL_PROJECTION);
+glLoadIdentity();
+gluPerspective(45,width/height,1.0,30.0);
+glMatrixMode(GL_MODELVIEW);
+glLoadIdentity();
+}
+lastTime=elapsedTime;
+elapsedTime=millis()-demoStart;
+elapsedTime=(lastTime+elapsedTime)/2;
+draw();
+
+console.swap();
+}
+}
+
+

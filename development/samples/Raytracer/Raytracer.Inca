@@ -1,0 +1,309 @@
+// A small raytracer using shaders by Ken Musgrave to render
+// an earth-like planet. Written March 2002 by B.J. Liebl.
+
+// If you're interested in writing shaders I recommend the
+// book "Texturing and Modelling - A Procedural Approach"
+// by Ebert, Musgrave, Peachey, Perlin and Worley. This is
+// where the shaders in this demo are from.
+
+// *** THE SHADER MODULE ***
+module Shader{
+class Shader{
+public:
+abstract Color shade(
+const Point &p,
+const Vector &n);
+}
+
+/* class VenusShader extends Shader{
+public:
+Color shade(
+const Point&p,
+const Vector&n)
+{
+static const float twist=0.4;
+static const float cutoff=256;
+static const float omega=0.65;
+static const float offset=0.5;
+static const float scale=0.3;
+
+Point PP;
+float rsq;
+float angle;
+float value;
+
+rsq=sqr(xcomp(n))+sqr(ycomp(n));
+angle=twist*pi2*rsq;
+PP=rotate(p,angle,point(0,0,0),point(0,0,1));
+value=abs(offset+scale*fBm(2*PP,2,omega,cutoff));
+
+return color(value,value*0.5,value*0.3);
+}
+} */
+
+class EarthShader extends Shader{
+public:
+Color shade(
+const Point &p,
+const Vector &n)
+{
+static const float lacunarity=2;
+static const float cutoff=128;
+static const float spectralExp=0.5;
+static const float seaLevel=0;
+static const float offset=0;
+static const float bumpScale=0.1;
+static const float mountainScale=1;
+static const float purtScale=0.5;
+static const float nonlinear=0.5;
+static const float latScale=0.95;
+static const float mottleLimit=0.75;
+static const float mottleDim=0.25;
+static const float mottleMag=0.02;
+static const float mottleScale=20;
+static const float iceCaps=0.9;
+static const float depthScale=1;
+static const float depthMax=0.5;
+
+float bumpy;
+float chaos;
+Point p2;
+
+bumpy=fBm(p,lacunarity,spectralExp,cutoff);
+chaos=bumpy+offset;
+
+if(chaos>seaLevel)
+{
+chaos*=mountainScale;
+p2=p+(bumpScale*bumpy)*n;
+}
+else
+p2=p;
+
+
+Vector n2=normalize(p2);
+
+float latitude;
+
+latitude=abs(ycomp(n));
+latitude+=chaos*(nonlinear*(1-latitude)+purtScale);
+latitude*=latScale;
+
+Color ct;
+
+if(chaos>seaLevel)
+{
+const Color earthColors[10]={
+color(0.5,0.39,0.2),
+color(0.5,0.39,0.2),
+color(0.5,0.39,0.2),
+color(0.2,0.3,0),
+color(0.85,0.2,0.04),
+color(0.65,0.22,0.04),
+color(0.5,0.42,0.28),
+color(0.6,0.5,0.23),
+color(1,1,1),
+color(1,1,1)
+};
+
+ct=spline(latitude,10,earthColors);
+
+if(latitude<mottleLimit)
+{
+float purt;
+Point pp;
+
+pp=mottleScale*n;
+purt=fBm(pp,2,mottleDim,64);
+ct+=(mottleMag*purt)*color(0.5,0.175,0.5);
+}
+}
+else
+{
+ct=color(.1,.2,.5);
+if(iceCaps>0&&latitude>iceCaps)
+ct=color(1,1,1);
+else
+{
+chaos-=seaLevel;
+chaos*=depthScale;
+if(chaos>-depthMax)
+chaos=-depthMax;
+ct*=(1+chaos);
+}
+}
+
+return ct;
+}
+}
+}
+
+// *** THE RENDER MODULE ***
+module Render{
+struct Ray{
+Point origin;
+Vector direction;
+}
+
+const float epsilon=1e-5;
+
+class Camera{
+public:
+void init(
+const Point &origin,
+const Point &target,
+const Vector &up)
+{
+Vector direction;
+
+mOrigin=origin;
+direction=target-origin;
+mUp=normalize(up);
+mRight=normalize(direction^mUp);
+mDirection=direction;
+}
+
+void generateRay(
+float inX,
+float inY,
+Ray &outRay)
+{
+outRay.origin=mOrigin;
+outRay.direction=normalize(
+inX*mRight+inY*mUp+mDirection);
+}
+
+Point mOrigin;
+Vector mRight;
+Vector mUp;
+Vector mDirection;
+}
+
+bool intersectSphere(
+const Ray &ray,
+const Point &center,
+float r2,
+Point &p)
+{
+Vector v;
+float a,b;
+
+v=center-ray.origin;
+a=v*v;
+b=v*ray.direction;
+if(a>=r2&&b<epsilon)
+return false;
+
+float t=r2-a+sqr(b);
+if(t>epsilon)
+{
+t=sqrt(t);
+p=ray.origin+(b-t)*ray.direction;
+return true;
+}
+
+return false;
+}
+
+void trace(
+const Ray &ray,
+Shader *shader)
+{
+Point center=point(0,0,2);
+float radius2=sqr(1.25);
+Vector lightVector=normalize(vector(1,-1,-1));
+
+Point p;
+
+if(not intersectSphere(ray,center,radius2,p))
+{
+setColor(0,0,0);
+return;
+}
+
+Vector normal;
+Color color;
+int r,g,b;
+float atten;
+
+normal=normalize(p-center);
+atten=clamp(normal*lightVector,0,1);
+
+color=shader->shade(p,normal)*atten;
+r=clamp(comp(color)[0],0,1)*255;
+g=clamp(comp(color)[1],0,1)*255;
+b=clamp(comp(color)[2],0,1)*255;
+setColor(r,g,b);
+}
+
+void render(
+Camera &cam,
+int size,
+int shift,
+Shader *shader)
+{
+int step=1<<shift;
+int mask=step*2-1;
+
+float scale=1.0/size;
+Ray ray;
+
+for(int iy=0;iy<size;iy+=step)
+{
+float dy=2*(iy*scale-0.5);
+systemTask();
+
+for(int ix=0;ix<size;ix+=step)
+{
+if(step<size&&
+(iy&mask)==0&&
+(ix&mask)==0)
+continue;
+
+float dx=2*(ix*scale-0.5);
+
+cam.generateRay(dx,dy,ray);
+
+trace(ray,shader);
+
+fillRect(ix,iy,
+ix+step-1,iy+step-1);
+}
+}
+}
+}
+
+// *** MAIN ***
+void main()
+{
+Shader *shader=new EarthShader;
+
+Camera cam;
+
+cam.init(
+point(0,0,0),
+point(0,0,1),
+vector(0,1,0));
+
+int shift=9;
+int size=1<<shift;
+
+PixmapConsole console;
+console.setResolution(size,size);
+console.open();
+
+for(int k=shift;k>=0;k--)
+{
+render(cam,size,k,shader);
+console.swap();
+systemTask();
+}
+
+while(true)
+{
+systemTask();
+console.swap();
+}
+}
+
+

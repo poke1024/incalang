@@ -1,0 +1,28 @@
+// An example how to use the Pixmap Console
+
+void main()
+{
+PixmapConsole console;
+
+console.setTitle("My Example Console");
+console.open();
+
+while(inkey()=="")
+{
+setColor(255,255,255);
+fillRect(0,0,640,480);
+
+int x=mousex();
+int y=mousey();
+
+setColor(0,0,0);
+fillOval(x-10,y-10,x+10,y+10);
+console.swap();
+
+//print << console.fps() << endl;
+//print.flush();
+}
+}
+
+
+

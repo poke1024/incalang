@@ -1,0 +1,246 @@
+//------------------------------------------------------------------------
+//
+// Author      : Jan Horn
+// Email       : jhorn@global.co.za
+// Website     : http://www.sulaco.co.za
+//               http://home.global.co.za/~jhorn
+// Date        : 12 March 2002
+// Version     : 1.0
+// Description : A very basic game engine I put tegether in about 2 hours
+//
+//------------------------------------------------------------------------
+
+// Ported to Inca by B. Liebl
+
+struct Vertex{
+float x;
+float y;
+float z;
+}
+
+struct Face{
+int v1;
+int v2;
+int v3;
+int v4;
+float u,v;
+int tex;
+}
+
+int textureCount;
+String *texName;
+GLuint *texture;
+
+int vertexCount;
+Vertex *vertex;
+
+int faceCount;
+Face *face;
+
+GLfloat x=0,z=0;
+GLfloat headMovement=0;
+GLfloat headMovAngle=0;
+GLfloat heading=0;
+GLfloat tilt=0;
+
+int elapsedTime=0;
+float frameTime=0;
+
+GLuint loadTexture(String path)
+{
+GLuint tex;
+
+Pixmap pixmap;
+pixmap.load(path);
+pixmap.convert(PIXEL_FORMAT_24_RGB);
+
+glGenTextures(1,&tex);
+glBindTexture(GL_TEXTURE_2D,tex);
+glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
+
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+
+gluBuild2DMipmaps(GL_TEXTURE_2D,3,
+pixmap.width(),pixmap.height(),
+GL_RGB,GL_UNSIGNED_BYTE,pixmap.pixels());
+
+return tex;
+}
+
+void readMap(
+InputStream &stream)
+{
+String s;
+
+stream>>textureCount;
+texName=new String[textureCount];
+texture=new GLuint[textureCount];
+for(int i=0;i<textureCount;i++)
+{
+stream>>texName[i];
+stream>>s;
+texture[i]=loadTexture("images/"+s);
+}
+
+stream>>vertexCount;
+vertex=new Vertex[vertexCount];
+for(int i=0;i<vertexCount;i++)
+{
+stream>>vertex[i].x;
+stream>>vertex[i].y;
+stream>>vertex[i].z;
+}
+
+stream>>faceCount;
+face=new Face[faceCount];
+for(int i=0;i<faceCount;i++)
+{
+stream>>face[i].v1;
+stream>>face[i].v2;
+stream>>face[i].v3;
+stream>>face[i].v4;
+stream>>face[i].u;
+stream>>face[i].v;
+stream>>s;
+
+face[i].v1-=1;
+face[i].v2-=1;
+face[i].v3-=1;
+face[i].v4-=1;
+
+for(int j=0;j<textureCount;j++)
+{
+if(texName[j]==s)
+{
+face[i].tex=j;
+break;
+}
+}
+}
+}
+
+void loadMap()
+{
+File file;
+
+file.openForReading("map.txt");
+readMap(file);
+file.close();
+}
+
+void draw()
+{
+glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+glLoadIdentity();
+
+glRotatef(tilt,1,0,0);
+glRotatef(heading,0,1,0);
+glTranslatef(x,-0.5+headMovement,z);
+
+const Face *f=face;
+
+for(int i=0;i<faceCount;i++,f++)
+{
+glBindTexture(GL_TEXTURE_2D,texture[f->tex]);
+glBegin(GL_QUADS);
+glTexCoord2f(0,0);
+glVertex3fv(&vertex[f->v1].x);
+glTexCoord2f(f->u,0);
+glVertex3fv(&vertex[f->v2].x);
+glTexCoord2f(f->u,f->v);
+glVertex3fv(&vertex[f->v3].x);
+glTexCoord2f(0,f->v);
+glVertex3fv(&vertex[f->v4].x);
+glEnd();
+}
+}
+
+void init()
+{
+glClearColor(0,0,0,0);
+glShadeModel(GL_SMOOTH);
+glClearDepth(1);
+glEnable(GL_DEPTH_TEST);
+glDepthFunc(GL_LESS);
+
+glHint(GL_PERSPECTIVE_CORRECTION_HINT,GL_NICEST);
+
+glEnable(GL_TEXTURE_2D);
+loadMap();
+
+heading=180;
+x=2.25;
+z=2;
+}
+
+void processKeys()
+{
+if(vkeyDown(VKEY_UP))
+{
+x-=sin(rad(heading))*frameTime/600;
+z+=cos(rad(heading))*frameTime/600;
+headMovAngle+=5;
+headMovement=0.025*sin(rad(headMovAngle));
+}
+
+if(vkeyDown(VKEY_DOWN))
+{
+x+=sin(rad(heading))*frameTime/600;
+z-=cos(rad(heading))*frameTime/600;
+headMovAngle-=5;
+headMovement=0.025*sin(rad(headMovAngle));
+}
+
+if(vkeyDown(VKEY_LEFT))
+heading-=30*frameTime/600;
+
+if(vkeyDown(VKEY_RIGHT))
+heading+=30*frameTime/600;
+
+/* if(vkeyDown(vkeyCode('r')))
+{
+x=2.25;
+z=2;
+} */
+}
+
+void main()
+{
+G3Console console;
+
+console.open();
+init();
+
+long demoStart=millis();
+int lastTime;
+const int ASCII_ESCAPE=27;
+
+do{
+frameTime=millis()-elapsedTime-demoStart;
+
+lastTime=elapsedTime;
+elapsedTime=millis()-demoStart;
+elapsedTime=(lastTime+elapsedTime)/2;
+
+if(console.resized())
+{
+float width=console.width();
+float height=console.height();
+glViewport(0,0,width,height);
+glMatrixMode(GL_PROJECTION);
+glLoadIdentity();
+gluPerspective(45,width/height,0.1,30);
+glMatrixMode(GL_MODELVIEW);
+glLoadIdentity();
+}
+
+draw();
+console.swap();
+systemTask();
+
+processKeys();
+}while(asc(inkey())!=ASCII_ESCAPE);
+}
+
+

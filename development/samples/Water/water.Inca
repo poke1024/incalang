@@ -1,0 +1,430 @@
+// Written by Jan Horn
+// Ported to Inca by B. Liebl
+
+const int gridSize=40;
+
+int elapsedTime=0;
+int elapsedTime2=0;
+
+// textures
+GLuint waterTexture;
+GLuint woodTexture;
+
+// user variables
+bool drawWedge;
+int rainInterval;
+float viscosity;
+GLfloat position[gridSize][gridSize];
+GLfloat velocity[gridSize][gridSize];
+GLfloat vertex[gridSize][gridSize][3];
+GLfloat normals[gridSize][gridSize][3];
+GLfloat xAngle,yAngle;
+
+GLuint loadTexture(String path)
+{
+GLuint tex;
+
+Pixmap pixmap;
+pixmap.load(path);
+pixmap.convert(PIXEL_FORMAT_32_RGBA);
+
+glGenTextures(1,&tex);
+glBindTexture(GL_TEXTURE_2D,tex);
+glTexEnvi(GL_TEXTURE_ENV,GL_TEXTURE_ENV_MODE,GL_MODULATE);
+
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MAG_FILTER,GL_LINEAR);
+glTexParameteri(GL_TEXTURE_2D,GL_TEXTURE_MIN_FILTER,GL_LINEAR);
+
+gluBuild2DMipmaps(GL_TEXTURE_2D,GL_RGBA,
+pixmap.width(),pixmap.height(),
+GL_RGBA,GL_UNSIGNED_BYTE,pixmap.pixels());
+
+return tex;
+}
+
+void createRainDrop()
+{
+int x=random(gridSize-4)+2;
+int y=random(gridSize-4)+2;
+velocity[x][y]=1060;
+}
+
+void setupWater()
+{
+// precalculate vertex coordinates
+const float scale=1.0/(gridSize/2);
+
+for(int i=0;i<gridSize;i++)
+{
+for(int j=0;j<gridSize;j++)
+{
+vertex[i][j][0]=(i-gridSize/2)*scale;
+vertex[i][j][1]=0;
+vertex[i][j][2]=(j-gridSize/2)*scale;
+
+normals[i][j][0]=0;
+normals[i][j][1]=1;
+normals[i][j][2]=0;
+}
+}
+}
+
+void drawWater()
+{
+int i,j;
+float speed;
+
+speed=elapsedTime-elapsedTime2;
+speed=speed/7;
+
+if(speed>5)
+speed=5;
+
+// calculate new velocity
+for(i=2;i<gridSize-2;i++)
+{
+for(j=2;j<gridSize-2;j++)
+{
+GLfloat center;
+GLfloat diag;
+
+center=position[i-1][j]+position[i+1][j];
+center+=position[i][j-1]+position[i][j+1];
+
+diag=position[i-1][j-1]+position[i+1][j-1];
+diag+=position[i-1][j+1]+position[i+1][j+1];
+
+velocity[i][j]+=(position[i][j]-
+(4*center+diag)/25)/7;
+}
+}
+
+// calculate new ripple positions and new vertex coordinates
+const float scale=1.0/(gridSize/2);
+const float yscale=scale/(speed*1024);
+
+for(i=2;i<gridSize-2;i++)
+{
+for(j=2;j<gridSize-2;j++)
+{
+position[i][j]-=velocity[i][j]*speed;
+position[i][j]*=viscosity;
+vertex[i][j][1]=position[i][j]*yscale;
+}
+}
+
+// calculate new vertex normals
+// do this by using the points to each side to get the right angle
+for(i=1;i<gridSize-1;i++)
+{
+for(j=1;j<gridSize-1;j++)
+{
+GLfloat x,y,z,veclen;
+
+x=position[i+1][j]-position[i-1][j];
+y=-2048;
+z=position[i][j+1]-position[i][j-1];
+veclen=sqrt(x*x+y*y+z*z);
+
+normals[i][j][0]=x/veclen;
+normals[i][j][1]=y/veclen;
+normals[i][j][2]=z/veclen;
+}
+}
+
+// draw the water texture
+glBindTexture(GL_TEXTURE_2D,waterTexture);
+for(j=0;j<gridSize-1;j++)
+{
+glBegin(GL_QUAD_STRIP);
+for(i=0;i<gridSize;i++)
+{
+glNormal3fv(&normals[i][j+1][0]);
+glVertex3fv(&vertex[i][j+1][0]);
+glNormal3fv(&normals[i][j][0]);
+glVertex3fv(&vertex[i][j][0]);
+}
+glEnd();
+}
+
+elapsedTime2=elapsedTime;
+
+}
+
+void drawBox()
+{
+glBindTexture(GL_TEXTURE_2D,woodTexture);
+glBegin(GL_QUADS);
+// back inner wall
+glColor3f(0.6,0.6,0.6);
+glTexCoord2f(0,0.85);glVertex3f(-1,-0.1,-1);
+glTexCoord2f(1,0.85);glVertex3f(1,-0.1,-1);
+glTexCoord2f(1,1.00);glVertex3f(1,0.2,-1);
+glTexCoord2f(0,1.00);glVertex3f(-1,0.2,-1);
+
+// back outer wall
+glTexCoord2f(0,0.8);glVertex3f(-1.1,-0.2,-1.1);
+glTexCoord2f(1,0.8);glVertex3f(1.1,-0.2,-1.1);
+glTexCoord2f(1,1.0);glVertex3f(1.1,0.2,-1.1);
+glTexCoord2f(0,1.0);glVertex3f(-1.1,0.2,-1.1);
+
+// front left outer wall
+glColor3f(0.5,0.5,0.5);
+glTexCoord2f(0.00,0.8);glVertex3f(-1.1,-0.2,-1.0);
+glTexCoord2f(0.03,0.8);glVertex3f(-1.1,-0.2,-1.1);
+glTexCoord2f(0.03,1.0);glVertex3f(-1.1,0.2,-1.1);
+glTexCoord2f(0.00,1.0);glVertex3f(-1.1,0.2,-1.0);
+
+// front right outer wall
+glTexCoord2f(0.00,0.8);glVertex3f(1.1,-0.2,-1.0);
+glTexCoord2f(0.03,0.8);glVertex3f(1.1,-0.2,-1.1);
+glTexCoord2f(0.03,1.0);glVertex3f(1.1,0.2,-1.1);
+glTexCoord2f(0.00,1.0);glVertex3f(1.1,0.2,-1.0);
+
+// back top wall
+glColor3f(1.0,1.0,1.0);
+glTexCoord2f(0,1.0);glVertex3f(-1.1,0.2,-1.0);
+glTexCoord2f(1,1.0);glVertex3f(1.1,0.2,-1.0);
+glTexCoord2f(1,0.9);glVertex3f(1.1,0.2,-1.1);
+glTexCoord2f(0,0.9);glVertex3f(-1.1,0.2,-1.1);
+
+// front inner wall
+glColor3f(0.6,0.6,0.6);
+glTexCoord2f(0,0.85);glVertex3f(-1,-0.1,1);
+glTexCoord2f(1,0.85);glVertex3f(1,-0.1,1);
+glTexCoord2f(1,1.00);glVertex3f(1,0.2,1);
+glTexCoord2f(0,1.00);glVertex3f(-1,0.2,1);
+
+// front outer wall
+glTexCoord2f(0,0.8);glVertex3f(-1.1,-0.2,1.1);
+glTexCoord2f(1,0.8);glVertex3f(1.1,-0.2,1.1);
+glTexCoord2f(1,1.0);glVertex3f(1.1,0.2,1.1);
+glTexCoord2f(0,1.0);glVertex3f(-1.1,0.2,1.1);
+
+// front left outer wall
+glColor3f(0.5,0.5,0.5);
+glTexCoord2f(0.00,0.8);glVertex3f(-1.1,-0.2,1.0);
+glTexCoord2f(0.03,0.8);glVertex3f(-1.1,-0.2,1.1);
+glTexCoord2f(0.03,1.0);glVertex3f(-1.1,0.2,1.1);
+glTexCoord2f(0.00,1.0);glVertex3f(-1.1,0.2,1.0);
+
+// front right outer wall
+glTexCoord2f(0.00,0.8);glVertex3f(1.1,-0.2,1.0);
+glTexCoord2f(0.03,0.8);glVertex3f(1.1,-0.2,1.1);
+glTexCoord2f(0.03,1.0);glVertex3f(1.1,0.2,1.1);
+glTexCoord2f(0.00,1.0);glVertex3f(1.1,0.2,1.0);
+
+// front top wall
+glColor3f(1.0,1.0,1.0);
+glTexCoord2f(0,1.0);glVertex3f(-1.1,0.2,1.0);
+glTexCoord2f(1,1.0);glVertex3f(1.1,0.2,1.0);
+glTexCoord2f(1,0.9);glVertex3f(1.1,0.2,1.1);
+glTexCoord2f(0,0.9);glVertex3f(-1.1,0.2,1.1);
+
+// right inner wall
+glColor3f(0.6,0.6,0.6);
+glTexCoord2f(0,0.85);glVertex3f(1,-0.1,-1);
+glTexCoord2f(1,0.85);glVertex3f(1,-0.1,1);
+glTexCoord2f(1,1.00);glVertex3f(1,0.2,1);
+glTexCoord2f(0,1.00);glVertex3f(1,0.2,-1);
+
+// right outer wall
+glTexCoord2f(0,0.8);glVertex3f(1.1,-0.2,-1.0);
+glTexCoord2f(1,0.8);glVertex3f(1.1,-0.2,1.0);
+glTexCoord2f(1,1.0);glVertex3f(1.1,0.2,1.0);
+glTexCoord2f(0,1.0);glVertex3f(1.1,0.2,-1.0);
+
+// right top wall
+glColor3f(1.0,1.0,1.0);
+glTexCoord2f(0,1.0);glVertex3f(1.1,0.2,-1.0);
+glTexCoord2f(1,1.0);glVertex3f(1.1,0.2,1.0);
+glTexCoord2f(1,0.9);glVertex3f(1.0,0.2,1.0);
+glTexCoord2f(0,0.9);glVertex3f(1.0,0.2,-1.0);
+
+// left inner wall
+glColor3f(0.6,0.6,0.6);
+glTexCoord2f(0,0.85);glVertex3f(-1,-0.1,-1);
+glTexCoord2f(1,0.85);glVertex3f(-1,-0.1,1);
+glTexCoord2f(1,1.00);glVertex3f(-1,0.2,1);
+glTexCoord2f(0,1.00);glVertex3f(-1,0.2,-1);
+
+// left outer wall
+glTexCoord2f(0,0.8);glVertex3f(-1.1,-0.2,-1.0);
+glTexCoord2f(1,0.8);glVertex3f(-1.1,-0.2,1.0);
+glTexCoord2f(1,1.0);glVertex3f(-1.1,0.2,1.0);
+glTexCoord2f(0,1.0);glVertex3f(-1.1,0.2,-1.0);
+
+// left top wall
+glColor3f(1.0,1.0,1.0);
+glTexCoord2f(0,1.0);glVertex3f(-1.1,0.2,-1.0);
+glTexCoord2f(1,1.0);glVertex3f(-1.1,0.2,1.0);
+glTexCoord2f(1,0.9);glVertex3f(-1.0,0.2,1.0);
+glTexCoord2f(0,0.9);glVertex3f(-1.0,0.2,-1.0);
+
+// bottom wall
+glTexCoord2f(0,1);glVertex3f(-1.1,-0.2,-1.1);
+glTexCoord2f(1,1);glVertex3f(1.1,-0.2,-1.1);
+glTexCoord2f(1,0);glVertex3f(1.1,-0.2,1.1);
+glTexCoord2f(0,0);glVertex3f(-1.1,-0.2,1.1);
+
+if(drawWedge)
+{
+// wedge top 1
+glTexCoord2f(0,0.0);glVertex3f(0.2,-0.10,0.0);
+glTexCoord2f(1,0.0);glVertex3f(0.7,-0.10,0.0);
+glTexCoord2f(1,0.5);glVertex3f(0.7,0.15,-0.5);
+glTexCoord2f(0,0.5);glVertex3f(0.2,0.15,-0.5);
+
+// wedge top 2
+glTexCoord2f(0,0.5);glVertex3f(0.2,0.15,-0.5);
+glTexCoord2f(1,0.5);glVertex3f(0.7,0.15,-0.5);
+glTexCoord2f(1,1.0);glVertex3f(0.7,-0.10,-1.0);
+glTexCoord2f(0,1.0);glVertex3f(0.2,-0.10,-1.0);
+
+// wedge left wall
+glColor3f(0.6,0.6,0.6);
+glTexCoord2f(0.0,0.0);glVertex3f(0.2,-0.1,-1.0);
+glTexCoord2f(1.0,0.0);glVertex3f(0.2,-0.1,0.0);
+glTexCoord2f(0.5,1.0);glVertex3f(0.2,0.15,-0.5);
+glTexCoord2f(0.0,0.0);glVertex3f(0.2,-0.1,-1.0);
+
+// wedge right wall
+glTexCoord2f(0.0,0.0);glVertex3f(0.7,-0.1,-1.0);
+glTexCoord2f(1.0,0.0);glVertex3f(0.7,-0.1,0.0);
+glTexCoord2f(0.5,1.0);glVertex3f(0.7,0.15,-0.5);
+glTexCoord2f(0.0,0.0);glVertex3f(0.7,-0.1,-1.0);
+}
+glEnd();
+}
+
+void draw()
+{
+glClear(GL_COLOR_BUFFER_BIT|GL_DEPTH_BUFFER_BIT);
+glLoadIdentity();
+
+glTranslatef(0.0,0.0,-3);
+
+glRotatef(xAngle,1,0,0);
+glRotatef(yAngle,0,1,0);
+
+glBlendFunc(GL_SRC_COLOR,GL_ONE);
+glDisable(GL_BLEND);
+glDisable(GL_TEXTURE_GEN_S);
+glDisable(GL_TEXTURE_GEN_T);
+drawBox();
+
+glBlendFunc(GL_SRC_ALPHA,GL_ONE_MINUS_SRC_ALPHA);
+glColor3f(0.85,1,0.85);
+glEnable(GL_BLEND);
+glEnable(GL_TEXTURE_GEN_S);
+glEnable(GL_TEXTURE_GEN_T);
+drawWater();
+
+/* if(showHelp)
+{
+glWrite(15,130,'Space : add a drop');
+glWrite(15,110,'+ : decrease drop interval');
+glWrite(15,90,'- : increase drop interval');
+glWrite(15,70,'H : Toggle this help screen');
+glWrite(15,50,'Arrow keys to rotate scene');
+glWrite(15,30,'Hold space down for continous rain');
+} */
+}
+
+void init()
+{
+glClearColor(0.0,0.0,0.0,0.0);
+glShadeModel(GL_SMOOTH);
+glClearDepth(1.0);
+glEnable(GL_DEPTH_TEST);
+glDepthFunc(GL_LESS);
+glBlendFunc(GL_SRC_COLOR,GL_ONE);
+
+//BuildFont();
+
+glHint(GL_PERSPECTIVE_CORRECTION_HINT,GL_NICEST);
+
+glEnable(GL_TEXTURE_2D);	// Enable Texture Mapping
+woodTexture=loadTexture("images/wood1.tga");
+waterTexture=loadTexture("images/reflection.tga");
+
+// enable spherical environment maping
+glTexGeni(GL_S,GL_TEXTURE_GEN_MODE,GL_SPHERE_MAP);
+glTexGeni(GL_T,GL_TEXTURE_GEN_MODE,GL_SPHERE_MAP);
+
+viscosity=0.96;
+for(int i=0;i<gridSize;i++)
+{
+for(int j=0;j<gridSize;j++)
+{
+position[i][j]=0;
+velocity[i][j]=0;
+}
+}
+
+rainInterval=1000;
+
+drawWedge=true;
+xAngle=32;
+yAngle=30;
+
+setupWater();
+}
+
+bool processKeys()
+{
+if(vkeyDown(VKEY_UP))
+xAngle-=0.5;
+if(vkeyDown(VKEY_DOWN))
+xAngle+=0.5;
+if(vkeyDown(VKEY_RIGHT))
+yAngle-=0.5;
+if(vkeyDown(VKEY_LEFT))
+yAngle+=0.5;
+
+int ascii=asc(upper(inkey()));
+
+if(ascii==27)
+return false;
+
+if(ascii==' ')
+createRainDrop();
+
+if(ascii=='W')
+drawWedge=not drawWedge;
+
+return true;
+}
+
+void main()
+{
+G3Console console;
+
+console.open();
+init();
+
+long demoStart=millis();
+int lastTime;
+
+do
+{
+if(console.resized())
+{
+float width=console.width();
+float height=console.height();
+glViewport(0,0,width,height);
+glMatrixMode(GL_PROJECTION);
+glLoadIdentity();
+gluPerspective(45,width/height,1.0,30.0);
+glMatrixMode(GL_MODELVIEW);
+glLoadIdentity();
+}
+lastTime=elapsedTime;
+elapsedTime=millis()-demoStart;
+elapsedTime=(lastTime+elapsedTime)/2;
+draw();
+
+console.swap();
+}while(processKeys());
+}
+

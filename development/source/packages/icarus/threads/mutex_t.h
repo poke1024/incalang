@@ -1,0 +1,52 @@
+// This file is part of incalang.
+
+// incalang is free software; you can redistribute it and/or modify
+// it under the terms of the GNU General Public License as published by
+// the Free Software Foundation; either version 2 of the License, or
+//(at your option) any later version.
+
+// incalang is distributed in the hope that it will be useful,
+// but WITHOUT ANY WARRANTY; without even the implied warranty of
+// MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+// GNU General Public License for more details.
+
+// You should have received a copy of the GNU General Public License
+// along with Foobar; if not, write to the Free Software
+// Foundation, Inc., 59 Temple Place, Suite 330, Boston, MA  02111-1307  USA
+
+// ===========================================================================
+//	mutex_t.h				   ©2002-2002 Bernhard Liebl. All rights reserved.
+// ===========================================================================
+
+#include "rt.h"
+
+BEGIN_RT_NAMESPACE
+
+class ithread_t;
+
+class mutex_t {
+public:
+						mutex_t();
+
+						~mutex_t();
+
+	void				lock();
+
+	void				unlock();
+
+protected:
+	friend class		signal_t;
+
+	void				safe_unlock();
+
+private:
+	struct node_t {
+		node_t*			next;
+		ithread_t*		thread;
+	};
+
+	s32					m_sem;
+	node_t*				m_wait;
+};
+
+END_RT_NAMESPACE

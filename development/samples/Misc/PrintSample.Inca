@@ -1,0 +1,8 @@
+// A sample to show how to use the at() command
+// to set the text console cursor location
+
+void main()
+{
+print<<at(5,5);
+print<<"hi there!";
+}

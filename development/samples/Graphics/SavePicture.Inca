@@ -1,0 +1,26 @@
+// this sample shows how to draw into an offscreen
+// bitmap and then save this bitmap into a .bmp file
+// to disk - after running the program you will have a
+// "sample.bmp" file in your program folder, containing
+// the pixmap's contents - this sample mainly exists to
+// demonstrate that you can use G2Pixmap to draw into
+// a memory pixmap and not necessarily only on screen
+
+void main()
+{
+G2Pixmap x;
+
+x.allocate(256,256);
+sglSetColor("black");
+sglClear();
+sglSetColor("red");
+sglFillOval(0,0,50,50);
+sglSetColor("green");
+sglFillOval(50,0,100,50);
+sglSetColor("blue");
+sglFillOval(150,0,200,50);
+
+glFinish();
+
+x.save("sample");
+}
